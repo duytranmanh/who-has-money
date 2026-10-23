@@ -35,7 +35,7 @@ export async function GET() {
     );
   }
 
-  // Each call uses upstream quota; no local rate limiting or automatic retries yet.
+  // Reuse successful upstream responses for one hour to conserve API quota.
   try {
     const response = await fetch(RECENT_FUNDING_URL, {
       headers: {
@@ -43,7 +43,7 @@ export async function GET() {
         Accept: "application/json",
         "User-Agent": "who-has-money/0.1",
       },
-      cache: "no-store",
+      next: { revalidate: 3600 },
       signal: AbortSignal.timeout(10_000),
     });
 

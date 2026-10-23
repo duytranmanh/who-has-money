@@ -1,3 +1,7 @@
+## Development data
+
+Use `fixtures/companies.json` as the reference data shape and sample dataset when developing and testing. Do not call the live RecentFunding API unless explicitly requested. Do not change the application's runtime data source unless explicitly requested.
+
 <!-- BEGIN:nextjs-agent-rules -->
 
 ## This is NOT the Next.js you know

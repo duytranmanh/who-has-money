@@ -1,69 +1,164 @@
-import Image from "next/image";
+"use client";
 
+import { useEffect, useState } from "react";
+
+type Company = {
+  slug: string;
+  name: string;
+  amount: number | null;
+  stage: string | null;
+  date: number | null;
+  website: string | null;
+};
+type Sort = "date" | "amount" | "name";
+
+// Accept only web links from upstream data before rendering clickable URLs.
+function webLink(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  try {
+    const url = new URL(value);
+    return ["https:", "http:"].includes(url.protocol) ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+// Normalize optional upstream fields so missing or malformed values stay displayable.
+function parseCompany(value: unknown): Company {
+  if (!value || typeof value !== "object") throw new Error("Invalid company data.");
+  const row = value as Record<string, unknown>;
+  if (typeof row.slug !== "string" || typeof row.name !== "string") {
+    throw new Error("Invalid company data.");
+  }
+  const amount = typeof row.amount_usd === "number" ||
+    (typeof row.amount_usd === "string" && row.amount_usd.trim() !== "")
+    ? Number(row.amount_usd) : NaN;
+  const date = typeof row.announced_at === "string" ? Date.parse(row.announced_at) : NaN;
+  return {
+    slug: row.slug,
+    name: row.name,
+    amount: Number.isFinite(amount) && amount >= 0 ? amount : null,
+    stage: typeof row.stage === "string" && row.stage !== "unknown" ? row.stage : null,
+    date: Number.isFinite(date) ? date : null,
+    website: webLink(row.website),
+  };
+}
+
+const money = new Intl.NumberFormat("en-US", {
+  style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 1,
+});
+const dateFormat = new Intl.DateTimeFormat("en-US", {
+  month: "short", day: "numeric", year: "numeric", timeZone: "UTC",
+});
+
+// Browse the current API batch; search and sorting never imply full-dataset coverage.
 export default function Home() {
+  // 1. Load and normalize the batch through the server-side API proxy.
+  // 2. Filter and sort locally, keeping unavailable values last.
+  // 3. Render the table and accessible request status.
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [notice, setNotice] = useState("");
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<Sort>("date");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    async function load() {
+      setLoading(true);
+      setError("");
+      try {
+        const response = await fetch("/api/companies", { signal: controller.signal });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(typeof data?.error === "string" ? data.error : "Could not load companies.");
+        }
+        if (!Array.isArray(data?.companies)) throw new Error("Unexpected company response.");
+        const rows = data.companies.map(parseCompany);
+        if (controller.signal.aborted) return;
+        setCompanies(rows);
+        setNotice(typeof data.access?.notice === "string" ? data.access.notice : "");
+      } catch (cause) {
+        if (!controller.signal.aborted) {
+          setError(cause instanceof Error ? cause.message : "Could not load companies.");
+        }
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    }
+    void load();
+    return () => controller.abort();
+  }, [attempt]);
+
+  const visible = companies
+    .filter((company) => company.name.toLowerCase().includes(query.trim().toLowerCase()))
+    .sort((a, b) => {
+      if (sort === "name") return a.name.localeCompare(b.name);
+      const left = a[sort];
+      const right = b[sort];
+      if (left === null) return right === null ? 0 : 1;
+      if (right === null) return -1;
+      return right - left || a.name.localeCompare(b.name);
+    });
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <main className="desktop">
+      <section className="window companies-window" aria-labelledby="app-title">
+        <div className="title-bar"><div className="title-bar-text">Who Has Money?</div></div>
+        <div className="window-body">
+          <header className="intro">
+            <h1 id="app-title">Who Has Money?</h1>
+            <p>Recently funded companies. Find out who raised what.</p>
+          </header>
+          <div className="toolbar">
+            <div className="control search-control">
+              <label htmlFor="company-search">Search loaded companies</label>
+              <input id="company-search" type="search" placeholder="Company name…" value={query}
+                onChange={(event) => setQuery(event.target.value)} disabled={loading || !!error} />
+            </div>
+            <div className="control">
+              <label htmlFor="company-sort">Sort by</label>
+              <select id="company-sort" value={sort} onChange={(event) => setSort(event.target.value as Sort)}>
+                <option value="date">Newest funding</option>
+                <option value="amount">Largest amount</option>
+                <option value="name">Company name</option>
+              </select>
+            </div>
+          </div>
+          {notice && !error && <p className="access-notice">{notice}</p>}
+          {loading ? <p className="message" role="status">Loading companies…</p>
+            : error ? <div className="message" role="alert"><p>{error}</p>
+              <button onClick={() => setAttempt((value) => value + 1)}>Retry</button></div>
+            : <>
+              <div className="table-scroll" role="region" aria-label="Companies table" tabIndex={0}>
+                <table>
+                  <caption className="sr-only">Recently funded companies, amounts in US dollars. Missing values shown as a dash.</caption>
+                  <thead><tr><th scope="col">Company</th><th scope="col" className="amount">Amount (USD)</th>
+                    <th scope="col">Round / stage</th><th scope="col">Announced</th><th scope="col">Website</th></tr></thead>
+                  <tbody>{visible.map((company) => <tr key={company.slug}>
+                    <th scope="row">{company.name}</th>
+                    <td className="amount">{company.amount === null ? "—" : money.format(company.amount)}</td>
+                    <td className="stage">{company.stage?.replaceAll("-", " ").replaceAll("_", " ") ?? "—"}</td>
+                    <td>{company.date === null ? "—" : dateFormat.format(company.date)}</td>
+                    <td>{company.website ? <a href={company.website} target="_blank" rel="noopener noreferrer"
+                      aria-label={`Visit ${company.name} website (opens in a new tab)`}>Visit website</a> : "—"}</td>
+                  </tr>)}</tbody>
+                </table>
+              </div>
+              {visible.length === 0 && <div className="message" role="status">
+                <p>{companies.length ? "No companies match your search." : "No companies available yet."}</p>
+                {query && <button onClick={() => setQuery("")}>Clear search</button>}
+              </div>}
+            </>}
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+        <footer className="status-bar" aria-live="polite" aria-atomic="true">
+          <p className="status-bar-field">{loading ? "Loading…" : error ? "Could not load companies" :
+            `Showing ${visible.length} of ${companies.length} loaded companies`}</p>
+          <p className="status-bar-field">Source: RecentFunding · Up to 50 companies</p>
+        </footer>
+      </section>
+    </main>
   );
 }

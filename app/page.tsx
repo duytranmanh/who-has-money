@@ -58,6 +58,7 @@ export default function Home() {
   // 3. Render the table and accessible request status.
   const [companies, setCompanies] = useState<Company[]>([]);
   const [notice, setNotice] = useState("");
+  const [excluded, setExcluded] = useState(0);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<Sort>("date");
   const [loading, setLoading] = useState(true);
@@ -79,6 +80,7 @@ export default function Home() {
         const rows = data.companies.map(parseCompany);
         if (controller.signal.aborted) return;
         setCompanies(rows);
+        setExcluded(typeof data.filtering?.excluded === "number" ? data.filtering.excluded : 0);
         setNotice(typeof data.access?.notice === "string" ? data.access.notice : "");
       } catch (cause) {
         if (!controller.signal.aborted) {
@@ -156,7 +158,7 @@ export default function Home() {
         <footer className="status-bar" aria-live="polite" aria-atomic="true">
           <p className="status-bar-field">{loading ? "Loading…" : error ? "Could not load companies" :
             `Showing ${visible.length} of ${companies.length} loaded companies`}</p>
-          <p className="status-bar-field">Source: RecentFunding · Up to 50 companies</p>
+          <p className="status-bar-field">Source: RecentFunding · US and unknown locations · {excluded} non-US excluded</p>
         </footer>
       </section>
     </main>

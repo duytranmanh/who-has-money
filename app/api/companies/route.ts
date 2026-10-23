@@ -1,8 +1,12 @@
+import { keepCompany } from "@/lib/companies";
+
 const RECENT_FUNDING_URL =
   "https://recentfunding.com/api/v1/companies?limit=50";
 
 // Checks the minimum company identity fields; other upstream fields remain unvalidated.
-function isCompanyList(value: unknown): value is Record<string, unknown> {
+function isCompanyList(value: unknown): value is Record<string, unknown> & {
+  companies: Record<string, unknown>[];
+} {
   if (typeof value !== "object" || value === null) return false;
   const companies = (value as Record<string, unknown>).companies;
   return (
@@ -24,7 +28,7 @@ function isCompanyList(value: unknown): value is Record<string, unknown> {
 export async function GET() {
   // 1. Check server configuration.
   // 2. Request companies and translate upstream failures.
-  // 3. Validate the payload and return it to the caller.
+  // 3. Validate the payload, exclude known non-US companies, and return it.
   const apiKey = process.env.RECENT_FUNDING_API_KEY;
   const headers = { "Cache-Control": "no-store" };
 
@@ -79,7 +83,16 @@ export async function GET() {
     }
 
     // Preserve pagination and access metadata alongside the company list.
-    return Response.json(data, { headers });
+    const companies = data.companies.filter((company) => keepCompany(company.hq_country));
+    return Response.json({
+      ...data,
+      companies,
+      count: companies.length,
+      filtering: {
+        fetched: data.companies.length,
+        excluded: data.companies.length - companies.length,
+      },
+    }, { headers });
   } catch (error) {
     // Log only the failure category so credentials and upstream payloads stay private.
     const timedOut = error instanceof Error && error.name === "TimeoutError";

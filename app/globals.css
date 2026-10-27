@@ -53,3 +53,11 @@ a { color: #0645ad; }
 .tracker-secondary { font-weight: normal; overflow-wrap: anywhere; margin-top: 5px; }
 .tracker-overdue { color: #a02020; }
 .tracker-notice { min-height: 1em; }
+
+.contact-outreach { white-space: normal; min-width: 280px; }
+.contact-outreach > summary { font-size: 13px; }
+.outreach-editor { margin-top: 16px; max-width: 680px; }
+.outreach-sequence { border-top: 1px solid #aaa; padding-top: 8px; margin-top: 16px; }
+.outreach-sequence h3 { font-size: 14px; }
+.tracker-companies .outreach-sequence li { border: 0; padding: 8px 0; }
+.outreach-text { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 700px; }

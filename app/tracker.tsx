@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
+import ContactOutreach from "./tracker-outreach";
 import type { FormEvent } from "react";
 import type { ContactProgress, TrackerCompany, TrackerContact } from "@/lib/tracker";
 
@@ -121,7 +122,7 @@ export default function Tracker() {
       ? current.map(company => company.id === data.companyId ? data.company : company)
       : [...current, data.company]);
     setNotice("Changes saved.");
-    closeEditor();
+    if (editor) closeEditor();
   }
 
   const contactCount = companies.reduce((count, company) => count + company.contacts.length, 0);
@@ -161,13 +162,13 @@ export default function Tracker() {
               {company.contacts.length === 0 ? <p>No contacts yet. Add a contact to {company.name}.</p> : <div className="table-scroll" role="region" aria-label={`Contacts at ${company.name}`} tabIndex={0}>
                 <table><caption className="sr-only">Contacts at {company.name}, including uncontacted contacts. Dates use local time.</caption>
                   <thead><tr><th scope="col">Contact</th><th scope="col">Progress</th><th scope="col">Next follow-up (local)</th><th scope="col">Details</th></tr></thead>
-                  <tbody>{sortedContacts(company).map(contact => <tr key={contact.id}>
+                  <tbody>{sortedContacts(company).map(contact => <Fragment key={contact.id}><tr>
                     <th scope="row">{contact.name}{contact.email && <div className="tracker-secondary">{contact.email}</div>}
                       {contact.links.map((link, index) => <div className="tracker-secondary" key={index}>{/^https?:\/\//i.test(link)
                         ? <a href={link} target="_blank" rel="noopener noreferrer">{link}</a> : link}</div>)}</th>
                     <td>{labels[contact.status]}</td><td>{contact.nextFollowUpAt ? <><time dateTime={contact.nextFollowUpAt}>{new Date(contact.nextFollowUpAt).toLocaleString()}</time>{contact.isOverdue && <strong className="tracker-overdue"> · Overdue</strong>}</> : "—"}</td>
                     <td><button disabled={!!editor} onClick={() => { setNotice(""); setEditor({ kind: "contact", company, contact }); }} aria-label={`Edit contact ${contact.name} at ${company.name}`}>Edit contact</button></td>
-                  </tr>)}</tbody></table>
+                  </tr><tr><td colSpan={4}><ContactOutreach contact={contact} disabled={!!editor} onSave={save} /></td></tr></Fragment>)}</tbody></table>
               </div>}
             </details>
           </li>)}</ul>

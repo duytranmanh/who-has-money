@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Tracker from "./tracker";
 
 type Company = {
   slug: string;
@@ -52,7 +53,7 @@ const dateFormat = new Intl.DateTimeFormat("en-US", {
 });
 
 // Browse the current API batch; search and sorting never imply full-dataset coverage.
-export default function Home() {
+function Discovery() {
   // 1. Load and normalize the batch through the server-side API proxy.
   // 2. Filter and sort locally, keeping unavailable values last.
   // 3. Render the table and accessible request status.
@@ -163,4 +164,18 @@ export default function Home() {
       </section>
     </main>
   );
+}
+
+// Keep visited panels mounted so switching tabs preserves searches and unsaved drafts.
+export default function Home() {
+  const [tab, setTab] = useState<"discovery" | "tracker">("discovery");
+  const [trackerVisited, setTrackerVisited] = useState(false);
+  return <>
+    <nav className="app-navigation" aria-label="Application sections">
+      <button aria-pressed={tab === "discovery"} onClick={() => setTab("discovery")}>Discovery</button>
+      <button aria-pressed={tab === "tracker"} onClick={() => { setTrackerVisited(true); setTab("tracker"); }}>Tracker</button>
+    </nav>
+    <div hidden={tab !== "discovery"}><Discovery /></div>
+    {trackerVisited && <div hidden={tab !== "tracker"}><Tracker /></div>}
+  </>;
 }

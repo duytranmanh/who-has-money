@@ -81,7 +81,7 @@ function DetailsForm({ editor, onSave, onCancel }: {
 }
 
 // Load saved companies, display derived outreach state, and merge only confirmed saves.
-export default function Tracker() {
+export default function Tracker({ active }: { active: boolean }) {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -90,25 +90,53 @@ export default function Tracker() {
   const [sort, setSort] = useState<Sort>("due");
   const [notice, setNotice] = useState("");
   const addButton = useRef<HTMLButtonElement>(null);
+  const loaded = useRef(false);
+  const writes = useRef(0);
+  const revision = useRef(0);
+  const refreshController = useRef<AbortController | null>(null);
+  const [refreshError, setRefreshError] = useState("");
 
   useEffect(() => {
-    const controller = new AbortController();
+    if (!active) return;
+    let disposed = false;
     async function load() {
-      setLoading(true);
-      setError("");
+      if (disposed || document.visibilityState !== "visible" || writes.current > 0) return;
+      refreshController.current?.abort();
+      const controller = new AbortController();
+      refreshController.current = controller;
+      const version = revision.current;
       try {
         const data = await request("/api/tracker", { signal: controller.signal });
         if (!Array.isArray(data.companies)) throw new Error("Unexpected tracker response.");
-        if (!controller.signal.aborted) setCompanies(data.companies);
+        if (disposed || controller.signal.aborted || version !== revision.current) return;
+        setCompanies(data.companies);
+        loaded.current = true;
+        setError("");
+        setRefreshError("");
       } catch (cause) {
-        if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Could not load tracker.");
+        if (!disposed && !controller.signal.aborted && version === revision.current) {
+          const message = cause instanceof Error ? cause.message : "Could not load tracker.";
+          if (loaded.current) setRefreshError(message);
+          else setError(message);
+        }
       } finally {
-        if (!controller.signal.aborted) setLoading(false);
+        if (!disposed && !controller.signal.aborted) setLoading(false);
       }
     }
+    // Background refreshes retain mounted forms, even when a refresh fails.
     void load();
-    return () => controller.abort();
-  }, [attempt]);
+    const refresh = () => { void load(); };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    const interval = window.setInterval(refresh, 60_000);
+    return () => {
+      disposed = true;
+      refreshController.current?.abort();
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+      window.clearInterval(interval);
+    };
+  }, [active, attempt]);
 
   function closeEditor() {
     setEditor(null);
@@ -116,13 +144,22 @@ export default function Tracker() {
   }
 
   async function save(url: string, method: string, values: Record<string, unknown>) {
-    const data = await request(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(values) });
-    if (!data.company?.id) throw new Error("Unexpected save response. Reload before retrying.");
-    setCompanies(current => current.some(company => company.id === data.companyId)
-      ? current.map(company => company.id === data.companyId ? data.company : company)
-      : [...current, data.company]);
-    setNotice("Changes saved.");
-    if (editor) closeEditor();
+    // Invalidate overlapping reads both before and after persistence.
+    writes.current += 1;
+    revision.current += 1;
+    refreshController.current?.abort();
+    try {
+      const data = await request(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(values) });
+      if (!data.company?.id) throw new Error("Unexpected save response. Reload before retrying.");
+      setCompanies(current => current.some(company => company.id === data.companyId)
+        ? current.map(company => company.id === data.companyId ? data.company : company)
+        : [...current, data.company]);
+      setNotice("Changes saved.");
+      if (editor) closeEditor();
+    } finally {
+      writes.current -= 1;
+      revision.current += 1;
+    }
   }
 
   const contactCount = companies.reduce((count, company) => count + company.contacts.length, 0);
@@ -148,6 +185,8 @@ export default function Tracker() {
             <option value="due">Next follow-up date</option><option value="overdue">Overdue first</option><option value="recent">Most recent outreach</option>
           </select></div></div>
       <p role="status" className="tracker-notice">{notice}</p>
+      {refreshError && <div role="alert"><p>Could not refresh: {refreshError} Showing previously loaded data.</p>
+        <button onClick={() => setAttempt(value => value + 1)}>Retry refresh</button></div>}
       {loading ? <p role="status">Loading tracker…</p> : error ? <div role="alert"><p>{error}</p><button onClick={() => setAttempt(value => value + 1)}>Retry</button></div> : <>
         {editor?.kind === "company" && !editor.company && <DetailsForm editor={editor} onSave={save} onCancel={closeEditor} />}
         {companies.length === 0 ? <p className="message">No companies yet. Add a company to start tracking contacts.</p> : <>

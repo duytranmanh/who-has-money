@@ -176,6 +176,6 @@ export default function Home() {
       <button aria-pressed={tab === "tracker"} onClick={() => { setTrackerVisited(true); setTab("tracker"); }}>Tracker</button>
     </nav>
     <div hidden={tab !== "discovery"}><Discovery /></div>
-    {trackerVisited && <div hidden={tab !== "tracker"}><Tracker /></div>}
+    {trackerVisited && <div hidden={tab !== "tracker"}><Tracker active={tab === "tracker"} /></div>}
   </>;
 }

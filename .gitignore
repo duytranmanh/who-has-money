@@ -40,3 +40,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local tracker data and temporary saves
+/data/tracker.json
+/data/tracker.json.*.tmp

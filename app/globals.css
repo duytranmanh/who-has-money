@@ -33,3 +33,31 @@ a { color: #0645ad; }
   .toolbar { align-items: stretch; flex-direction: column; }
   .status-bar-field { flex-basis: 100%; }
 }
+
+.app-navigation { max-width: 1040px; margin: 24px auto 0; padding: 0 12px; display: flex; gap: 8px; }
+.app-navigation button[aria-pressed="true"] { font-weight: bold; box-shadow: inset 1px 1px 3px #777; }
+.app-navigation ~ div .desktop { padding-top: 16px; }
+[hidden] { display: none !important; }
+.tracker-editor { border: 1px solid #aaa; padding: 16px; margin-bottom: 24px; }
+.tracker-editor h2 { margin-top: 0; }
+.tracker-editor fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.tracker-editor .control { margin-bottom: 12px; }
+.tracker-editor textarea { width: 100%; font: inherit; padding: 6px; resize: vertical; }
+.tracker-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.tracker-companies { list-style: none; padding: 0; }
+.tracker-companies li { padding: 16px 0; border-bottom: 1px solid #aaa; }
+.tracker-companies summary { cursor: pointer; font-size: 15px; }
+.tracker-companies .tracker-actions { margin: 12px 0; }
+.tracker-companies .table-scroll { margin-top: 12px; }
+.tracker-notes { white-space: pre-wrap; overflow-wrap: anywhere; margin-bottom: 0; }
+.tracker-secondary { font-weight: normal; overflow-wrap: anywhere; margin-top: 5px; }
+.tracker-overdue { color: #a02020; }
+.tracker-notice { min-height: 1em; }
+
+.contact-outreach { white-space: normal; min-width: 280px; }
+.contact-outreach > summary { font-size: 13px; }
+.outreach-editor { margin-top: 16px; max-width: 680px; }
+.outreach-sequence { border-top: 1px solid #aaa; padding-top: 8px; margin-top: 16px; }
+.outreach-sequence h3 { font-size: 14px; }
+.tracker-companies .outreach-sequence li { border: 0; padding: 8px 0; }
+.outreach-text { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 700px; }

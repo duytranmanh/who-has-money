@@ -106,3 +106,15 @@ The server owns IDs, validation, sequence transitions, derived state, and JSON p
 - Serialize read-modify-write operations and atomically replace the JSON file. Confirm success only after persistence; return `500` on failure without reporting an unsaved change as successful.
 
 
+## Implementation map
+
+| Layer | Responsibility | Files |
+| --- | --- | --- |
+| HTTP | Define endpoints, select operations, and specify editable fields and success statuses. | `app/api/tracker/**/route.ts` |
+| Orchestration | Parse and validate requests, coordinate logic and storage, and build HTTP responses and errors. | [`lib/tracker-api.ts`](../lib/tracker-api.ts) |
+| Logic | Define data types, enforce business rules, and calculate outreach progress. | [`lib/tracker.ts`](../lib/tracker.ts) |
+| Storage | Read JSON, queue updates, and atomically save data. | [`lib/tracker-storage.ts`](../lib/tracker-storage.ts) |
+
+For writes, orchestration passes an edit callback to storage. Storage loads current data inside the queue, runs the callback using the logic layer, and saves before orchestration returns success.
+
+Naming: `<feature>-api.ts` for HTTP helpers, `<feature>.ts` for logic, and `<feature>-storage.ts` for persistence. Tests live beside each file as `<name>.test.ts`. Next.js endpoints use `route.ts`.

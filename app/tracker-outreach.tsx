@@ -5,7 +5,7 @@ import { useContext, useId, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type { TrackerContact, TrackerMessage, TrackerSequence } from "@/lib/tracker";
 
-type Action = { kind: "start" } | { kind: "follow" | "response" | "close"; sequence: TrackerSequence }
+export type OutreachAction = { kind: "start" } | { kind: "follow" | "response" | "close"; sequence: TrackerSequence }
   | { kind: "edit"; message: TrackerMessage } | { kind: "delete"; message: TrackerMessage };
 type Save = (url: string, method: string, values: Record<string, unknown>) => Promise<void>;
 const kinds = { initial: "Initial outreach", follow_up_1: "First follow-up", follow_up_2: "Second follow-up" };
@@ -18,7 +18,7 @@ function localTimestamp(value: string): string {
 }
 
 // Keep an action's draft mounted after errors; only confirmed persistence closes the form.
-function ActionForm({ action, contact, onSave, onCancel }: { action: Action; contact: TrackerContact; onSave: Save; onCancel: () => void }) {
+function ActionForm({ action, contact, onSave, onCancel }: { action: OutreachAction; contact: TrackerContact; onSave: Save; onCancel: () => void }) {
   const id = useId();
   const original = action.kind === "edit" ? action.message : undefined;
   const [initialAt] = useState(() => original ? localTimestamp(original.sentAt) : action.kind === "start" ? "" : localTimestamp(new Date().toISOString()));
@@ -80,36 +80,35 @@ function ActionForm({ action, contact, onSave, onCancel }: { action: Action; con
 }
 
 // Keep contact actions available while showing the attempt selected in the workspace.
-export default function ContactOutreach({ contact, disabled, onSave, sequenceId }: { sequenceId?: string; contact: TrackerContact; disabled: boolean; onSave: Save }) {
-  const [action, setAction] = useState<Action | null>(null);
-  const trigger = useRef<HTMLButtonElement | null>(null);
+export default function ContactOutreach({ contact, disabled, onSave, sequenceId, action, onActionChange }: { sequenceId?: string; contact: TrackerContact; disabled: boolean; onSave: Save; action: OutreachAction | null; onActionChange: (action: OutreachAction | null) => void }) {
+  const details = useRef<HTMLDetailsElement | null>(null);
   const open = contact.sequences.find(sequence => sequence.closedAt === null);
   const inlineBusy = useContext(InlineBusyContext);
   const locked = disabled || action !== null || inlineBusy;
 
-  function begin(next: Action, button: HTMLButtonElement) {
-    trigger.current = button;
-    setAction(next);
+  function begin(next: OutreachAction) {
+    onActionChange(next);
   }
 
   function finish() {
-    setAction(null);
+    onActionChange(null);
     // Wait for action buttons to be enabled again after the form unmounts.
-    requestAnimationFrame(() => trigger.current?.isConnected && trigger.current.focus());
+    requestAnimationFrame(() => details.current?.querySelector("button")?.focus());
   }
 
-  return <details className="contact-outreach" open>
+  if (action) return <ActionForm action={action} contact={contact} onSave={onSave} onCancel={finish} />;
+
+  return <details ref={details} className="contact-outreach" open>
     <summary>Outreach and history · {contact.sequences.length} attempts</summary>
     <p>Record messages already sent. Dates guide follow-ups; nothing is sent automatically.</p>
     <div className="tracker-actions">
-      <button id="record-outreach" disabled={locked} onClick={event => begin({ kind: "start" }, event.currentTarget)}>{contact.sequences.length ? "Start another outreach" : "Record initial outreach"}</button>
+      <button id="record-outreach" disabled={locked} onClick={() => begin({ kind: "start" })}>{contact.sequences.length ? "Start another outreach" : "Record initial outreach"}</button>
       {open && <>
-        <button disabled={locked} onClick={event => begin({ kind: "follow", sequence: open }, event.currentTarget)}>Record follow-up {open.messages.length} of 2</button>
-        <button disabled={locked} onClick={event => begin({ kind: "response", sequence: open }, event.currentTarget)}>Record response</button>
-        <button disabled={locked} onClick={event => begin({ kind: "close", sequence: open }, event.currentTarget)}>Close sequence</button>
+        <button disabled={locked} onClick={() => begin({ kind: "follow", sequence: open })}>Record follow-up {open.messages.length} of 2</button>
+        <button disabled={locked} onClick={() => begin({ kind: "response", sequence: open })}>Record response</button>
+        <button disabled={locked} onClick={() => begin({ kind: "close", sequence: open })}>Close sequence</button>
       </>}
     </div>
-    {action && <ActionForm action={action} contact={contact} onSave={onSave} onCancel={finish} />}
     {contact.sequences.length === 0 ? <p>No outreach recorded.</p> : [...contact.sequences].reverse().filter(sequence => !sequenceId || sequence.id === sequenceId).map(sequence => <section className="outreach-sequence" key={sequence.id} aria-label={`Outreach attempt ${contact.sequences.indexOf(sequence) + 1}`}>
       <h3>Attempt {contact.sequences.indexOf(sequence) + 1} · {sequence.closeReason ? reasons[sequence.closeReason] : "Open"}</h3>
       {sequence.closedAt && <p>Closed: <time dateTime={sequence.closedAt}>{new Date(sequence.closedAt).toLocaleString()}</time></p>}
@@ -123,7 +122,7 @@ export default function ContactOutreach({ contact, disabled, onSave, sequenceId 
         <InlineField label="message notes" value={message.notes} multiline disabled={locked} placeholder="Add message notes…"
           onSave={notes => onSave(`/api/tracker/messages/${message.id}`, "PATCH", { notes })} />
         <div className="tracker-actions">
-          <button disabled={locked || index !== sequence.messages.length - 1} title={index !== sequence.messages.length - 1 ? "Delete later messages first" : undefined} onClick={event => begin({ kind: "delete", message }, event.currentTarget)}>Delete message</button>
+          <button disabled={locked || index !== sequence.messages.length - 1} title={index !== sequence.messages.length - 1 ? "Delete later messages first" : undefined} onClick={() => begin({ kind: "delete", message })}>Delete message</button>
         </div>
       </li>)}</ol>
     </section>)}

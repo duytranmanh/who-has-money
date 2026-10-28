@@ -1,6 +1,7 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import InlineField, { InlineBusyContext, InlineEditingContext } from "./tracker-inline-field";
 import ContactOutreach from "./tracker-outreach";
 import type { FormEvent } from "react";
 import type { ContactProgress, TrackerCompany, TrackerContact } from "@/lib/tracker";
@@ -86,7 +87,13 @@ export default function Tracker({ active }: { active: boolean }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
+  const [inlineCount, setInlineCount] = useState(0);
+  const writeQueue = useRef<Promise<void>>(Promise.resolve());
   const [editor, setEditor] = useState<Editor | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [contactId, setContactId] = useState<string | null>(null);
+  const [sequenceId, setSequenceId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
   const [sort, setSort] = useState<Sort>("due");
   const [notice, setNotice] = useState("");
   const addButton = useRef<HTMLButtonElement>(null);
@@ -143,7 +150,7 @@ export default function Tracker({ active }: { active: boolean }) {
     addButton.current?.focus();
   }
 
-  async function save(url: string, method: string, values: Record<string, unknown>) {
+  async function persist(url: string, method: string, values: Record<string, unknown>) {
     // Invalidate overlapping reads both before and after persistence.
     writes.current += 1;
     revision.current += 1;
@@ -154,6 +161,7 @@ export default function Tracker({ active }: { active: boolean }) {
       setCompanies(current => current.some(company => company.id === data.companyId)
         ? current.map(company => company.id === data.companyId ? data.company : company)
         : [...current, data.company]);
+      if (method === "POST" && url === "/api/tracker/companies") setSelectedId(data.company.id);
       setNotice("Changes saved.");
       if (editor) closeEditor();
     } finally {
@@ -161,6 +169,15 @@ export default function Tracker({ active }: { active: boolean }) {
       revision.current += 1;
     }
   }
+
+  // Apply full-company responses in write order so rapid field saves cannot roll back the UI.
+  function save(url: string, method: string, values: Record<string, unknown>) {
+    const operation = writeQueue.current.then(() => persist(url, method, values));
+    writeQueue.current = operation.catch(() => {});
+    return operation;
+  }
+
+  const navigationLocked = !!editor || inlineCount > 0;
 
   const contactCount = companies.reduce((count, company) => count + company.contacts.length, 0);
 
@@ -175,44 +192,82 @@ export default function Tracker({ active }: { active: boolean }) {
     });
   }
 
-  return <main className="desktop"><section className="window companies-window" aria-labelledby="tracker-title">
-    <div className="title-bar"><div className="title-bar-text">Outreach Tracker</div></div>
-    <div className="window-body">
-      <header className="intro"><h1 id="tracker-title">Outreach Tracker</h1><p>Companies, contacts, and your outreach progress.</p></header>
-      <div className="toolbar"><button ref={addButton} disabled={loading || !!error || !!editor} onClick={() => { setNotice(""); setEditor({ kind: "company" }); }}>Add company</button>
-        <div className="control"><label htmlFor="tracker-sort">Sort contacts within companies by</label>
-          <select id="tracker-sort" value={sort} onChange={event => setSort(event.target.value as Sort)}>
-            <option value="due">Next follow-up date</option><option value="overdue">Overdue first</option><option value="recent">Most recent outreach</option>
-          </select></div></div>
-      <p role="status" className="tracker-notice">{notice}</p>
-      {refreshError && <div role="alert"><p>Could not refresh: {refreshError} Showing previously loaded data.</p>
-        <button onClick={() => setAttempt(value => value + 1)}>Retry refresh</button></div>}
-      {loading ? <p role="status">Loading tracker…</p> : error ? <div role="alert"><p>{error}</p><button onClick={() => setAttempt(value => value + 1)}>Retry</button></div> : <>
-        {editor?.kind === "company" && !editor.company && <DetailsForm editor={editor} onSave={save} onCancel={closeEditor} />}
-        {companies.length === 0 ? <p className="message">No companies yet. Add a company to start tracking contacts.</p> : <>
-          <h2>Companies</h2>
-          <ul className="tracker-companies">{companies.map(company => <li key={company.id}>
-            <details open>
-              <summary><strong>{company.name}</strong><span> · {company.contacts.length} contacts</span></summary>
-              {company.notes && <p className="tracker-notes">{company.notes}</p>}
-              <div className="tracker-actions"><button disabled={!!editor} onClick={() => { setNotice(""); setEditor({ kind: "company", company }); }} aria-label={`Edit company ${company.name}`}>Edit company</button>
-                <button disabled={!!editor} onClick={() => { setNotice(""); setEditor({ kind: "contact", company }); }} aria-label={`Add contact to ${company.name}`}>Add contact</button></div>
-              {editor?.company?.id === company.id && <DetailsForm editor={editor} onSave={save} onCancel={closeEditor} />}
-              {company.contacts.length === 0 ? <p>No contacts yet. Add a contact to {company.name}.</p> : <div className="table-scroll" role="region" aria-label={`Contacts at ${company.name}`} tabIndex={0}>
-                <table><caption className="sr-only">Contacts at {company.name}, including uncontacted contacts. Dates use local time.</caption>
-                  <thead><tr><th scope="col">Contact</th><th scope="col">Progress</th><th scope="col">Next follow-up (local)</th><th scope="col">Details</th></tr></thead>
-                  <tbody>{sortedContacts(company).map(contact => <Fragment key={contact.id}><tr>
-                    <th scope="row">{contact.name}{contact.email && <div className="tracker-secondary">{contact.email}</div>}
-                      {contact.links.map((link, index) => <div className="tracker-secondary" key={index}>{/^https?:\/\//i.test(link)
-                        ? <a href={link} target="_blank" rel="noopener noreferrer">{link}</a> : link}</div>)}</th>
-                    <td>{labels[contact.status]}</td><td>{contact.nextFollowUpAt ? <><time dateTime={contact.nextFollowUpAt}>{new Date(contact.nextFollowUpAt).toLocaleString()}</time>{contact.isOverdue && <strong className="tracker-overdue"> · Overdue</strong>}</> : "—"}</td>
-                    <td><button disabled={!!editor} onClick={() => { setNotice(""); setEditor({ kind: "contact", company, contact }); }} aria-label={`Edit contact ${contact.name} at ${company.name}`}>Edit contact</button></td>
-                  </tr><tr><td colSpan={4}><ContactOutreach contact={contact} disabled={!!editor} onSave={save} /></td></tr></Fragment>)}</tbody></table>
-              </div>}
-            </details>
-          </li>)}</ul>
+  const selected = companies.find(company => company.id === selectedId) ?? companies[0];
+  const contacts = selected ? sortedContacts(selected) : [];
+  const contact = contacts.find(person => person.id === contactId) ?? selected?.contacts[0];
+  const touchpoints = contacts.flatMap(person => person.sequences.map((sequence, index) => ({ person, sequence, index })));
+  const selectedTouchpoint = touchpoints.find(item => item.sequence.id === sequenceId && item.person.id === contact?.id)
+    ?? touchpoints.filter(item => item.person.id === contact?.id).at(-1);
+  const links = [...new Set(contacts.flatMap(person => person.links))];
+  const visible = companies.filter(company => `${company.name} ${company.notes} ${company.contacts.map(person => person.name).join(" ")}`.toLowerCase().includes(query.trim().toLowerCase()));
+
+  return <InlineEditingContext.Provider value={setInlineCount}><InlineBusyContext.Provider value={inlineCount > 0}><main className="tracker-desktop">
+    <section className="tracker-panel applications-panel" aria-labelledby="tracker-title">
+      <div className="workspace-title" id="tracker-title">📁 Applications</div>
+      <div className="workspace-strip"><strong>All ({companies.length})</strong>
+        <button ref={addButton} disabled={loading || !!error || navigationLocked} onClick={() => { setNotice(""); setEditor({ kind: "company" }); }}>+ New</button></div>
+      <div className="application-search"><label className="sr-only" htmlFor="tracker-search">Search applications</label>
+        <input id="tracker-search" type="search" disabled={inlineCount > 0} placeholder="Search targets or contacts…" value={query} onChange={event => setQuery(event.target.value)} /></div>
+      <div className="application-list">
+        {loading ? <p role="status">Loading tracker…</p> : error ? <div role="alert"><p>{error}</p><button onClick={() => setAttempt(value => value + 1)}>Retry</button></div> : <>
+          {visible.map(company => <button key={company.id} className={`application-row ${selected?.id === company.id ? "is-selected" : ""}`}
+            disabled={navigationLocked} aria-pressed={selected?.id === company.id} onClick={() => { setSelectedId(company.id); setContactId(null); setSequenceId(null); setNotice(""); }}>
+            <strong>{selected?.id === company.id && <span className="selection-marker">▸ </span>}{company.name}</strong>
+            <span className={company.contacts.some(person => person.status === "responded") ? "workspace-badge" : "application-meta"}>
+              {company.contacts.some(person => person.status === "responded") ? "Responded" : company.contacts.some(person => person.isOverdue) ? "Follow-up due" : `${company.contacts.length} contacts`}</span>
+          </button>)}
+          {!visible.length && <p className="workspace-empty">{companies.length ? "No matching applications." : "Add a company to start tracking outreach."}</p>}
         </>}
-      </>}
-    </div><footer className="status-bar"><p className="status-bar-field">{loading ? "Loading…" : `${companies.length} companies · ${contactCount} contacts`}</p></footer>
-  </section></main>;
+      </div>
+      <footer className="workspace-footer">{companies.length} companies · {contactCount} contacts</footer>
+    </section>
+
+    <section className="tracker-panel company-panel" aria-label="Company workspace">
+      <div className="workspace-title">💼 {selected ? `${selected.name} — Company Workspace` : "Company Workspace"}</div>
+      {editor && <DetailsForm key={`${editor.kind}-${editor.kind === "company" ? editor.company?.id : editor.contact?.id}`} editor={editor} onSave={save} onCancel={closeEditor} />}
+      {refreshError && <div role="alert" className="workspace-alert"><p>Could not refresh: {refreshError} Showing previously loaded data.</p><button onClick={() => setAttempt(value => value + 1)}>Retry refresh</button></div>}
+      <div role="status" className={notice ? "workspace-notice" : "sr-only"}>{notice}</div>
+      {selected ? <>
+        <header className="company-heading"><div className="company-heading-row"><h1><InlineField key={selected.id} label="company name" value={selected.name} required disabled={!!editor} onSave={name => save(`/api/tracker/companies/${selected.id}`, "PATCH", { name })} /></h1></div>
+          <div className="company-links"><strong>LINKS:</strong>{links.filter(link => /^https?:\/\//i.test(link)).map(link => <a key={link} href={link} target="_blank" rel="noopener noreferrer">{link.replace(/^https?:\/\//i, "").replace(/\/$/, "")} ↗</a>)}
+            {!links.length && <span>Add links through a contact.</span>}</div>
+        </header>
+        <section className="company-intel" aria-labelledby="intel-title"><div className="workspace-strip"><strong id="intel-title">📝 NOTES &amp; INTEL</strong><span>Company research &amp; preparation</span></div>
+          <div className="intel-body"><InlineField key={selected.id} label="company notes" value={selected.notes} multiline disabled={!!editor} placeholder="Add company research, notes, and interview preparation…" onSave={notes => save(`/api/tracker/companies/${selected.id}`, "PATCH", { notes })} /></div></section>
+        <section className="touchpoint-history" aria-labelledby="history-title"><div className="workspace-strip"><div><strong id="history-title">OUTREACH HISTORY &amp; TOUCHPOINTS</strong> <span className="logged-count">{touchpoints.length} logged</span></div>
+          <button disabled={!contact || navigationLocked} onClick={() => { document.getElementById("outreach-inspector")?.scrollIntoView({ behavior: "smooth", block: "nearest" }); document.getElementById("record-outreach")?.click(); }}>+ Log outreach</button></div>
+          <div className="history-body"><div className="history-sort"><label htmlFor="tracker-sort">Sort contacts</label><select id="tracker-sort" disabled={inlineCount > 0} value={sort} onChange={event => setSort(event.target.value as Sort)}><option value="due">Next follow-up</option><option value="overdue">Overdue first</option><option value="recent">Recent outreach</option></select></div>
+            {touchpoints.map(({ person, sequence, index }) => <button key={sequence.id} disabled={navigationLocked} className={`touchpoint-row ${selectedTouchpoint?.sequence.id === sequence.id ? "is-selected" : ""}`} aria-pressed={selectedTouchpoint?.sequence.id === sequence.id}
+              onClick={() => { setContactId(person.id); setSequenceId(sequence.id); }}>
+              <span className="selection-marker">{selectedTouchpoint?.sequence.id === sequence.id ? "▸" : "▹"}</span>
+              <span className="touchpoint-copy"><strong>Attempt {index + 1} · {person.name}</strong><span className="touchpoint-preview">{sequence.messages[0]?.text}</span></span>
+              <span className="touchpoint-meta"><span className={sequence.closeReason === "responded" ? "workspace-badge" : ""}>{sequence.closeReason ? labels[sequence.closeReason] : "Awaiting follow-up"}</span><time>{sequence.messages[0] && new Date(sequence.messages[0].sentAt).toLocaleString()}</time></span>
+            </button>)}
+            {!touchpoints.length && <p className="workspace-empty">No outreach recorded. Add a contact, then record your first message.</p>}
+          </div>
+        </section>
+      </> : !editor && <p className="workspace-empty">Select or create a company to open its workspace.</p>}
+    </section>
+
+    <aside className="tracker-panel inspector-panel" id="outreach-inspector" aria-label="Outreach inspector">
+      <div className="workspace-title">🔍 Outreach Inspector &amp; Detail</div>
+      <div className="workspace-strip inspector-heading"><div><span className="workspace-muted">SELECTED TOUCHPOINT</span><strong>{selectedTouchpoint ? `Attempt ${selectedTouchpoint.index + 1} · ${contact?.name}` : contact?.name ?? "No contact selected"}</strong></div></div>
+      <div className="inspector-body">
+        {contact && <section className="inspector-card"><h2>MESSAGE TRANSCRIPT</h2>
+          {contact.nextFollowUpAt && <p className={contact.isOverdue ? "tracker-overdue" : "workspace-muted"}>Next follow-up: {new Date(contact.nextFollowUpAt).toLocaleString()}{contact.isOverdue ? " · Overdue" : ""}</p>}
+          <ContactOutreach key={contact.id} contact={contact} sequenceId={selectedTouchpoint?.sequence.id} disabled={!!editor} onSave={save} />
+        </section>}
+        <section className="inspector-card"><div className="contacts-heading"><h2>ASSOCIATED CONTACTS</h2><button disabled={!selected || navigationLocked} onClick={() => selected && setEditor({ kind: "contact", company: selected })}>+ Add</button></div>
+          {contacts.map(person => <article className="inspector-contact" key={person.id}>
+            <InlineField label={`contact name for ${person.name}`} value={person.name} required disabled={!!editor} onSave={name => save(`/api/tracker/contacts/${person.id}`, "PATCH", { name })} />
+            <InlineField label={`email for ${person.name}`} value={person.email} type="email" disabled={!!editor} placeholder="Add email…" onSave={email => save(`/api/tracker/contacts/${person.id}`, "PATCH", { email })} />
+            <InlineField label={`links for ${person.name}`} value={person.links.join("\n")} multiline disabled={!!editor} placeholder="Add links, one per line…" onSave={value => save(`/api/tracker/contacts/${person.id}`, "PATCH", { links: value.split("\n").map(link => link.trim()).filter(Boolean) })} />
+            <div className="contact-link-list">{person.links.filter(link => /^https?:\/\//i.test(link)).map((link, index) => <a key={index} href={link} target="_blank" rel="noopener noreferrer">Open link {index + 1} ↗</a>)}</div>
+            <div className="contact-footer"><span>{labels[person.status]}</span><button disabled={navigationLocked} aria-pressed={contact?.id === person.id} onClick={() => { setContactId(person.id); setSequenceId(null); }}>View outreach</button></div>
+          </article>)}
+          {!contacts.length && <p className="workspace-muted">No contacts yet.</p>}
+        </section>
+      </div>
+    </aside>
+  </main></InlineBusyContext.Provider></InlineEditingContext.Provider>;
 }

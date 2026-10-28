@@ -1,6 +1,7 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import InlineField, { InlineBusyContext } from "./tracker-inline-field";
+import { useContext, useId, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type { TrackerContact, TrackerMessage, TrackerSequence } from "@/lib/tracker";
 
@@ -78,12 +79,13 @@ function ActionForm({ action, contact, onSave, onCancel }: { action: Action; con
   </form>;
 }
 
-// Outreach stays inside its contact; all attempts remain visible after restarting.
-export default function ContactOutreach({ contact, disabled, onSave }: { contact: TrackerContact; disabled: boolean; onSave: Save }) {
+// Keep contact actions available while showing the attempt selected in the workspace.
+export default function ContactOutreach({ contact, disabled, onSave, sequenceId }: { sequenceId?: string; contact: TrackerContact; disabled: boolean; onSave: Save }) {
   const [action, setAction] = useState<Action | null>(null);
   const trigger = useRef<HTMLButtonElement | null>(null);
   const open = contact.sequences.find(sequence => sequence.closedAt === null);
-  const locked = disabled || action !== null;
+  const inlineBusy = useContext(InlineBusyContext);
+  const locked = disabled || action !== null || inlineBusy;
 
   function begin(next: Action, button: HTMLButtonElement) {
     trigger.current = button;
@@ -96,11 +98,11 @@ export default function ContactOutreach({ contact, disabled, onSave }: { contact
     requestAnimationFrame(() => trigger.current?.isConnected && trigger.current.focus());
   }
 
-  return <details className="contact-outreach">
+  return <details className="contact-outreach" open>
     <summary>Outreach and history · {contact.sequences.length} attempts</summary>
     <p>Record messages already sent. Dates guide follow-ups; nothing is sent automatically.</p>
     <div className="tracker-actions">
-      <button disabled={locked} onClick={event => begin({ kind: "start" }, event.currentTarget)}>{contact.sequences.length ? "Start another outreach" : "Record initial outreach"}</button>
+      <button id="record-outreach" disabled={locked} onClick={event => begin({ kind: "start" }, event.currentTarget)}>{contact.sequences.length ? "Start another outreach" : "Record initial outreach"}</button>
       {open && <>
         <button disabled={locked} onClick={event => begin({ kind: "follow", sequence: open }, event.currentTarget)}>Record follow-up {open.messages.length} of 2</button>
         <button disabled={locked} onClick={event => begin({ kind: "response", sequence: open }, event.currentTarget)}>Record response</button>
@@ -108,16 +110,19 @@ export default function ContactOutreach({ contact, disabled, onSave }: { contact
       </>}
     </div>
     {action && <ActionForm action={action} contact={contact} onSave={onSave} onCancel={finish} />}
-    {contact.sequences.length === 0 ? <p>No outreach recorded.</p> : [...contact.sequences].reverse().map(sequence => <section className="outreach-sequence" key={sequence.id} aria-label={`Outreach attempt ${contact.sequences.indexOf(sequence) + 1}`}>
+    {contact.sequences.length === 0 ? <p>No outreach recorded.</p> : [...contact.sequences].reverse().filter(sequence => !sequenceId || sequence.id === sequenceId).map(sequence => <section className="outreach-sequence" key={sequence.id} aria-label={`Outreach attempt ${contact.sequences.indexOf(sequence) + 1}`}>
       <h3>Attempt {contact.sequences.indexOf(sequence) + 1} · {sequence.closeReason ? reasons[sequence.closeReason] : "Open"}</h3>
       {sequence.closedAt && <p>Closed: <time dateTime={sequence.closedAt}>{new Date(sequence.closedAt).toLocaleString()}</time></p>}
       {sequence.respondedAt && <p>Response received: <time dateTime={sequence.respondedAt}>{new Date(sequence.respondedAt).toLocaleString()}</time></p>}
       <ol>{sequence.messages.map((message, index) => <li key={message.id}>
-        <strong>{kinds[message.kind]}</strong> · <time dateTime={message.sentAt}>{new Date(message.sentAt).toLocaleString()}</time>
-        <p className="outreach-text">{message.text}</p>
-        {message.notes && <p className="outreach-text">Notes: {message.notes}</p>}
+        <strong>{kinds[message.kind]}</strong>
+        <InlineField label="message sent at (local time)" value={localTimestamp(message.sentAt)} type="datetime-local" required disabled={locked}
+          onSave={value => onSave(`/api/tracker/messages/${message.id}`, "PATCH", { sentAt: value === localTimestamp(message.sentAt) ? message.sentAt : new Date(value).toISOString() })} />
+        <InlineField label="message text" value={message.text} multiline required disabled={locked}
+          onSave={text => onSave(`/api/tracker/messages/${message.id}`, "PATCH", { text })} />
+        <InlineField label="message notes" value={message.notes} multiline disabled={locked} placeholder="Add message notes…"
+          onSave={notes => onSave(`/api/tracker/messages/${message.id}`, "PATCH", { notes })} />
         <div className="tracker-actions">
-          <button disabled={locked} onClick={event => begin({ kind: "edit", message }, event.currentTarget)}>Edit message</button>
           <button disabled={locked || index !== sequence.messages.length - 1} title={index !== sequence.messages.length - 1 ? "Delete later messages first" : undefined} onClick={event => begin({ kind: "delete", message }, event.currentTarget)}>Delete message</button>
         </div>
       </li>)}</ol>

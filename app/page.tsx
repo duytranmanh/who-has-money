@@ -173,7 +173,7 @@ export default function Home() {
   return <>
     <nav className="app-navigation" aria-label="Application sections">
       <button aria-pressed={tab === "discovery"} onClick={() => setTab("discovery")}>Discovery</button>
-      <button aria-pressed={tab === "tracker"} onClick={() => { setTrackerVisited(true); setTab("tracker"); }}>Tracker</button>
+      <button aria-pressed={tab === "tracker"} onClick={() => { setTrackerVisited(true); setTab("tracker"); }}>✦ Tracker Workspace <span className="navigation-live">LIVE</span></button>
     </nav>
     <div hidden={tab !== "discovery"}><Discovery /></div>
     {trackerVisited && <div hidden={tab !== "tracker"}><Tracker active={tab === "tracker"} /></div>}

@@ -61,3 +61,104 @@ a { color: #0645ad; }
 .outreach-sequence h3 { font-size: 14px; }
 .tracker-companies .outreach-sequence li { border: 0; padding: 8px 0; }
 .outreach-text { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 700px; }
+
+/* The tracker uses tiled windows; discovery retains its table layout. */
+body { background: #4a7596; }
+.app-navigation { max-width: none; margin: 4px 12px 6px; padding: 0; gap: 8px; }
+.app-navigation button { border-radius: 0; background: #d4d0c8; min-height: 25px; padding: 3px 14px; font: bold 12px Tahoma, Arial, sans-serif; }
+.app-navigation button[aria-pressed="true"] { background: #ece9d8; box-shadow: none; }
+.navigation-live { display: inline-block; margin-left: 8px; padding: 1px 4px; background: #0a246a; color: white; font-size: 10px; }
+.tracker-desktop { display: grid; grid-template-columns: minmax(210px, 1fr) minmax(420px, 2.03fr) minmax(280px, 1fr); gap: 9px; height: calc(100dvh - 43px); min-height: 640px; padding: 0 9px 9px; color: #18212f; }
+.tracker-panel { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: #ece9d8; border: 1px solid #111; box-shadow: inset 1px 1px #fff, inset -1px -1px #808080; overflow: auto; }
+.workspace-title { flex-shrink: 0; padding: 6px 9px; background: linear-gradient(90deg, #104a7b, #286ea6); color: white; font-weight: bold; font-size: 12px; letter-spacing: .1px; }
+.tracker-desktop button { font-family: inherit; font-size: 11px; border-radius: 0; }
+.workspace-strip { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 9px; border-bottom: 1px solid #b5b2a5; background: #ece9d8; flex-shrink: 0; }
+.workspace-strip > span { font: 10px monospace; color: #6b7280; }
+.application-search { padding: 6px; border-bottom: 1px solid #d0ccc0; background: #f5f3eb; }
+.application-search input { width: 100%; height: 34px; font: inherit; padding: 6px 8px; }
+.application-list { padding: 5px; flex: 1; overflow: auto; background: white; }
+.tracker-desktop .application-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 45px; padding: 10px; border: 0; border-bottom: 1px solid #f0f1f3; background: white; box-shadow: none; text-align: left; color: #18212f; }
+.application-row strong { overflow-wrap: anywhere; }
+.application-meta { color: #6b7280; font-size: 10px; white-space: nowrap; }
+.tracker-desktop .is-selected { background: #0a246a; color: white; }
+.is-selected .application-meta { color: #d5e1f9; }
+.selection-marker { color: #f9d82c; }
+.workspace-badge { display: inline-block; background: #009b70; color: white; padding: 2px 5px; font-size: 10px; font-weight: bold; white-space: nowrap; }
+.workspace-footer { padding: 5px 8px; color: #69707b; font-size: 10px; border-top: 1px solid #d0ccc0; }
+.company-heading { background: #f5f3eb; padding: 12px; }
+.company-heading-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.company-heading h1 { margin: 0; font-size: 20px; overflow-wrap: anywhere; }
+.company-links { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 12px; padding-top: 8px; border-top: 1px solid #d0ccc0; font-size: 10px; color: #667080; }
+.company-links a { background: white; border: 1px solid #7f9db9; padding: 2px 4px; font-family: monospace; overflow-wrap: anywhere; }
+.company-intel { flex: 3; min-height: 220px; display: flex; flex-direction: column; }
+.company-intel .workspace-strip, .touchpoint-history .workspace-strip { font-size: 10px; }
+.intel-body { flex: 1; background: white; padding: 14px 12px; overflow: auto; }
+.intel-body .tracker-notes { margin: 0; font: 12px/1.65 monospace; }
+.touchpoint-history { flex: 2; display: flex; flex-direction: column; min-height: 220px; border-top: 1px solid #b5b2a5; }
+.logged-count { display: inline-block; border: 1px solid #7f9db9; background: white; color: #667080; margin-left: 6px; padding: 1px 4px; font: 10px monospace; }
+.history-body { padding: 6px; background: white; flex: 1; overflow: auto; }
+.history-sort { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; color: #687080; font-size: 10px; }
+.history-sort select { font: inherit; }
+.tracker-desktop .touchpoint-row { display: flex; width: 100%; align-items: flex-start; gap: 8px; padding: 10px 8px; margin-bottom: 6px; border: 1px solid #cbd1dc; background: #faf8f2; text-align: left; box-shadow: none; color: #18212f; }
+.tracker-desktop .touchpoint-row.is-selected { background: #0a246a; color: white; }
+.touchpoint-copy { flex: 1; min-width: 0; }
+.touchpoint-preview { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 5px; opacity: .7; font-style: italic; }
+.touchpoint-meta { display: flex; align-items: flex-end; flex-direction: column; gap: 5px; max-width: 42%; font-size: 10px; }
+.touchpoint-meta time { font: 9px monospace; }
+.inspector-heading strong { display: block; margin-top: 4px; font-size: 11px; }
+.inspector-body { padding: 8px; overflow: auto; }
+.inspector-card { background: white; border: 1px solid #7f9db9; padding: 9px; margin-bottom: 8px; }
+.inspector-card h2 { margin: 0; font-size: 10px; color: #6b7280; }
+.contacts-heading { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #eef0f3; padding-bottom: 6px; }
+.inspector-contact { padding: 9px 0; border-bottom: 1px solid #eef0f3; }
+.inspector-contact:last-child { border-bottom: 0; padding-bottom: 0; }
+.tracker-desktop .contact-select { background: none; border: 0; box-shadow: none; min-width: 0; padding: 0; font-weight: bold; text-align: left; color: #18212f; }
+.tracker-desktop .contact-select[aria-pressed="true"] { color: #0645ad; text-decoration: underline; }
+.contact-footer { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 8px; color: #6b7280; font-size: 10px; }
+.workspace-muted { color: #6b7280; font-size: 11px; }
+.workspace-empty { padding: 16px 12px; color: #6b7280; line-height: 1.6; }
+.workspace-alert, .workspace-notice { padding: 8px 12px; margin: 0; }
+.workspace-notice { color: #007d5b; background: #edf8f1; }
+.tracker-desktop .tracker-editor { margin: 8px; background: #f5f3eb; padding: 12px; }
+.tracker-desktop .tracker-editor h2 { font-size: 16px; }
+.tracker-desktop .contact-outreach { min-width: 0; margin-top: 10px; font-size: 11px; }
+.contact-outreach > p { color: #6b7280; line-height: 1.5; }
+.inspector-card .outreach-sequence h3 { font-size: 11px; }
+.inspector-card .outreach-sequence ol { padding-left: 16px; }
+.inspector-card .outreach-sequence li { margin: 12px 0; }
+.inspector-card .outreach-text { padding: 9px; border: 1px solid #e0e3e8; background: #faf8f2; line-height: 1.6; }
+.inspector-card .tracker-actions { gap: 5px; }
+.inspector-card .tracker-actions button { min-width: 0; white-space: normal; }
+.tracker-desktop button:disabled { cursor: default; }
+.tracker-desktop button:not(:disabled) { cursor: pointer; }
+@media (max-width: 1100px) {
+  .tracker-desktop { grid-template-columns: 210px minmax(0, 1fr); height: auto; min-height: calc(100dvh - 43px); }
+  .applications-panel { grid-row: span 2; }
+  .company-panel { min-height: 650px; }
+  .inspector-panel { grid-column: 2; }
+}
+@media (max-width: 680px) {
+  .tracker-desktop { display: flex; flex-direction: column; padding: 0 8px 8px; }
+  .application-list { max-height: 220px; }
+  .applications-panel { min-height: 160px; }
+  .company-panel { min-height: 600px; }
+  .inspector-body { overflow: visible; }
+  .touchpoint-meta { max-width: 36%; }
+  .company-intel .workspace-strip > span { display: none; }
+  .app-navigation { margin-left: 8px; margin-right: 8px; }
+}
+
+/* Inline controls inherit the surrounding text so saved fields read like workspace content. */
+.inline-field { min-width: 0; margin: 3px 0; }
+.tracker-desktop .inline-display { display: block; width: 100%; min-width: 0; min-height: 22px; padding: 3px; border: 1px solid transparent; background: transparent; box-shadow: none; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; color: inherit; }
+.tracker-desktop .inline-display:hover:not(:disabled) { border-color: #7f9db9; background: #f5f8fc; }
+.tracker-desktop .inline-placeholder { color: #737b86; font-size: 11px; font-weight: normal; }
+.inline-field input, .inline-field textarea { width: 100%; padding: 4px; font: inherit; color: inherit; }
+.inline-field textarea { min-height: 65px; resize: vertical; line-height: 1.65; }
+.inline-multiline { white-space: pre-wrap; }
+.intel-body .inline-field { font: 12px/1.65 monospace; }
+.company-heading h1 { flex: 1; min-width: 0; }
+.inline-status { display: block; color: #007d5b; font: 10px Tahoma, sans-serif; margin: 3px; }
+.inline-error { display: block; color: #a02020; font: 11px/1.5 Tahoma, sans-serif; margin: 4px; }
+.contact-link-list { display: flex; flex-wrap: wrap; gap: 8px; font-size: 10px; }
+.inspector-contact > .inline-field:first-child { font-weight: bold; }

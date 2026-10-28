@@ -130,3 +130,24 @@ describe("tracker JSON storage", () => {
     expect(await store.readTracker()).toEqual({ companies: [] });
   });
 });
+
+describe("legacy outreach compatibility", () => {
+  it("loads saved drafts as ordinary messages and reconciles open attempts", async () => {
+    const savedCompany = company();
+    const contact = startSequence(createContact({ name: "Alex" }), { text: "Hello", sentAt: "2026-10-01T12:00:00Z" }, new Date("2026-10-02T12:00:00Z"));
+    const original = contact.sequences[0];
+    contact.sequences.push({ ...original, id: "new-attempt", messages: [
+      { ...original.messages[0], id: "empty-message", text: "", sentAt: "2026-10-03T12:00:00Z", draft: true } as typeof original.messages[number],
+    ] });
+    savedCompany.contacts.push(contact);
+    await mkdir(join(directory, "data"));
+    await writeFile(path, JSON.stringify({ companies: [savedCompany] }));
+    const loaded = await createTrackerStorage(path).readTracker();
+    const sequences = loaded.companies[0].contacts[0].sequences;
+    expect(sequences[0]).toMatchObject({ closeReason: "restarted", closedAt: "2026-10-03T12:00:00Z" });
+    expect(sequences[1].messages[0]).toMatchObject({ text: "", sentAt: "2026-10-03T12:00:00Z" });
+    expect(sequences[1].messages[0]).not.toHaveProperty("draft");
+    await createTrackerStorage(path).updateTracker(() => loaded);
+    expect(await createTrackerStorage(path).readTracker()).toEqual(loaded);
+  });
+});

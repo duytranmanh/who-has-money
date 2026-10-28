@@ -147,3 +147,21 @@ describe("tracker API", () => {
     expect(await state.store.readTracker()).toEqual({ companies: [] });
   });
 });
+
+describe("empty inline outreach API", () => {
+  it("persists empty outreach and follow-ups without a sent-state transition", async () => {
+    const { contactId } = await setup();
+    let current = await result(await start(req({ text: "", sentAt: message(1).sentAt }), ctx(contactId)), 201);
+    const sequenceId = current.company.contacts[0].sequences[0].id;
+    expect(current.company.contacts[0].status).toBe("awaiting_follow_up_1");
+    current = await result(await follow(req({ text: "", sentAt: message(2).sentAt }), ctx(sequenceId)), 201);
+    expect(current.company.contacts[0].nextFollowUpAt).toBe("2026-01-05T12:00:00.000Z");
+    const id = current.company.contacts[0].sequences[0].messages[1].id;
+    current = await result(await edit(req({ text: "", notes: "" }, "PATCH"), ctx(id)));
+    expect(current.company.contacts[0].sequences[0].messages[1].text).toBe("");
+    await result(await close(req({ action: "record_response", at: message(3).sentAt }, "PATCH"), ctx(sequenceId)));
+    current = await result(await close(req({ action: "edit_closure", at: message(4).sentAt }, "PATCH"), ctx(sequenceId)));
+    expect(current.company.contacts[0].sequences[0].respondedAt).toBe("2026-01-04T12:00:00.000Z");
+    expect((await state.store.readTracker()).companies[0].contacts[0].sequences[0].messages[0].text).toBe("");
+  });
+});

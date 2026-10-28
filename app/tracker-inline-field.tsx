@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
+import { formatDateTime } from "@/lib/date-time";
 import { createInlineAutosave } from "@/lib/inline-autosave";
 import type { InlineSaveState } from "@/lib/inline-autosave";
 
@@ -58,7 +59,7 @@ export default function InlineField({ label, value, onSave, multiline = false, r
           if (event.nativeEvent.isComposing) return;
           if (event.key === "Escape") { event.preventDefault(); session.current?.cancel(); }
           if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); commit(); }
-        }} /> : <input ref={element => { input.current = element; }} aria-label={label} type={type} step={type === "datetime-local" ? "0.001" : undefined}
+        }} /> : <input ref={element => { input.current = element; }} aria-label={label} type={type} step={type === "datetime-local" ? "60" : undefined}
         value={state.draft} required={required} autoFocus onChange={event => change(event.target.value)} onKeyDown={event => {
           if (event.nativeEvent.isComposing) return;
           if (event.key === "Escape") { event.preventDefault(); session.current?.cancel(); }
@@ -71,7 +72,7 @@ export default function InlineField({ label, value, onSave, multiline = false, r
         valid: () => !composing.current && !!input.current?.checkValidity() && (!required || !!input.current.value.trim()),
       });
       setState({ editing: true, draft: value, saving: false, error: "", status: "Saved" });
-    }}>{value || placeholder}</button>}
+    }}>{value ? type === "datetime-local" ? formatDateTime(value) : value : placeholder}</button>}
     {state.status && <span className="inline-status" role="status">{state.status}</span>}
     {state.error && <span className="inline-error" role="alert">{state.error}</span>}
   </div>;

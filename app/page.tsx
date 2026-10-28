@@ -1,5 +1,6 @@
 "use client";
 
+import { formatDateTime } from "@/lib/date-time";
 import { useEffect, useState } from "react";
 import Tracker from "./tracker";
 
@@ -47,9 +48,6 @@ function parseCompany(value: unknown): Company {
 
 const money = new Intl.NumberFormat("en-US", {
   style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 1,
-});
-const dateFormat = new Intl.DateTimeFormat("en-US", {
-  month: "short", day: "numeric", year: "numeric", timeZone: "UTC",
 });
 
 // Browse the current API batch; search and sorting never imply full-dataset coverage.
@@ -144,7 +142,7 @@ function Discovery() {
                     <th scope="row">{company.name}</th>
                     <td className="amount">{company.amount === null ? "—" : money.format(company.amount)}</td>
                     <td className="stage">{company.stage?.replaceAll("-", " ").replaceAll("_", " ") ?? "—"}</td>
-                    <td>{company.date === null ? "—" : dateFormat.format(company.date)}</td>
+                    <td>{company.date === null ? "—" : formatDateTime(company.date, "UTC")}</td>
                     <td>{company.website ? <a href={company.website} target="_blank" rel="noopener noreferrer"
                       aria-label={`Visit ${company.name} website (opens in a new tab)`}>Visit website</a> : "—"}</td>
                   </tr>)}</tbody>

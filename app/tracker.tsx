@@ -1,8 +1,9 @@
 "use client";
 
+import { formatDateTime } from "@/lib/date-time";
 import { useEffect, useRef, useState } from "react";
 import InlineField, { InlineBusyContext, InlineEditingContext } from "./tracker-inline-field";
-import ContactOutreach, { type OutreachAction } from "./tracker-outreach";
+import ContactOutreach from "./tracker-outreach";
 import type { ContactProgress, TrackerCompany, TrackerContact } from "@/lib/tracker";
 
 type Contact = TrackerContact & ContactProgress;
@@ -37,7 +38,7 @@ export default function Tracker({ active }: { active: boolean }) {
   const creatingContactRef = useRef(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [contactId, setContactId] = useState<string | null>(null);
-  const [outreachAction, setOutreachAction] = useState<OutreachAction | null>(null);
+  const [outreachBusy, setOutreachBusy] = useState(false);
   const [query, setQuery] = useState("");
   const [notice, setNotice] = useState("");
   const addButton = useRef<HTMLButtonElement>(null);
@@ -154,7 +155,7 @@ export default function Tracker({ active }: { active: boolean }) {
     }
   }
 
-  const detailsLocked = creatingCompany || creatingContact || !!outreachAction;
+  const detailsLocked = creatingCompany || creatingContact || outreachBusy;
   const navigationLocked = detailsLocked || inlineCount > 0;
 
   const contactCount = companies.reduce((count, company) => count + company.contacts.length, 0);
@@ -223,7 +224,7 @@ export default function Tracker({ active }: { active: boolean }) {
               <span className="selection-marker">{contact?.id === person.id ? "▸" : "▹"}</span>
               <span className="touchpoint-copy"><strong>{person.name}</strong><span className="touchpoint-preview">{person.email || "No email added"}</span></span>
               <span className="touchpoint-meta"><span>{labels[person.status]}</span>
-                {person.nextFollowUpAt && <time dateTime={person.nextFollowUpAt}>Next: {new Date(person.nextFollowUpAt).toLocaleString()}{person.isOverdue ? " · Overdue" : ""}</time>}
+                {person.nextFollowUpAt && <time dateTime={person.nextFollowUpAt}>Next: {formatDateTime(person.nextFollowUpAt)}{person.isOverdue ? " · Overdue" : ""}</time>}
               </span>
             </button>)}
             {!contacts.length && <p className="workspace-empty">No contacts yet. Add a contact to start tracking outreach.</p>}
@@ -236,8 +237,7 @@ export default function Tracker({ active }: { active: boolean }) {
       <div className="title-bar workspace-title"><div className="title-bar-text">🔍 {contact ? "Contact Details & Outreach" : "Company Overview"}</div></div>
       {selected && <div className="inspector-body">
         {contact ? <>
-          {!outreachAction && <section className="inspector-card" key={contact.id}>
-            <div className="tracker-actions"><button disabled={navigationLocked} onClick={() => setContactId(null)}>Back to overview</button></div>
+          <section className="inspector-card" key={contact.id}>
             <h2>CONTACT DETAILS</h2>
             <article className="inspector-contact">
               <InlineField label="contact name" value={contact.name} required disabled={detailsLocked} onSave={name => save(`/api/tracker/contacts/${contact.id}`, "PATCH", { name })} />
@@ -245,12 +245,12 @@ export default function Tracker({ active }: { active: boolean }) {
               <InlineField label="contact links" value={contact.links.join("\n")} multiline disabled={detailsLocked} placeholder="Add links, one per line…" onSave={value => save(`/api/tracker/contacts/${contact.id}`, "PATCH", { links: value.split("\n").map(link => link.trim()).filter(Boolean) })} />
               <div className="contact-link-list">{contact.links.filter(link => /^https?:\/\//i.test(link)).map((link, index) => <a key={index} href={link} target="_blank" rel="noopener noreferrer">Open link {index + 1} ↗</a>)}</div>
               <p>{labels[contact.status]}</p>
-              {contact.nextFollowUpAt && <p className={contact.isOverdue ? "tracker-overdue" : "workspace-muted"}>Next follow-up: {new Date(contact.nextFollowUpAt).toLocaleString()}{contact.isOverdue ? " · Overdue" : ""}</p>}
+              {contact.nextFollowUpAt && <p className={contact.isOverdue ? "tracker-overdue" : "workspace-muted"}>Next follow-up: {formatDateTime(contact.nextFollowUpAt)}{contact.isOverdue ? " · Overdue" : ""}</p>}
             </article>
-          </section>}
+          </section>
           <section className="inspector-card">
             <ContactOutreach key={contact.id} contact={contact} disabled={creatingCompany || creatingContact} onSave={save}
-              action={outreachAction} onActionChange={setOutreachAction} />
+              onBusyChange={setOutreachBusy} />
           </section>
         </> : <section className="inspector-card"><h2>{selected.name} · OVERVIEW</h2>
           <p>{contacts.length} contacts · {outreachCount} outreach attempts</p>

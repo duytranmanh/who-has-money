@@ -164,3 +164,7 @@ body { background: #4a7596; }
 .inline-error { display: block; color: #a02020; font: 11px/1.5 Tahoma, sans-serif; margin: 4px; }
 .contact-link-list { display: flex; flex-wrap: wrap; gap: 8px; font-size: 10px; }
 .inspector-contact > .inline-field:first-child { font-weight: bold; }
+
+.outreach-cards { list-style: none; padding: 0; }
+.inspector-card .outreach-cards { padding-left: 0; }
+.outreach-message { padding: 10px; border: 1px solid #cbd1dc; background: #faf8f2; }

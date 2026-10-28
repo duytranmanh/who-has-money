@@ -1,5 +1,6 @@
 "use client";
 
+import { formatDateTime } from "@/lib/date-time";
 import { useEffect, useState } from "react";
 import Tracker from "./tracker";
 
@@ -47,9 +48,6 @@ function parseCompany(value: unknown): Company {
 
 const money = new Intl.NumberFormat("en-US", {
   style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 1,
-});
-const dateFormat = new Intl.DateTimeFormat("en-US", {
-  month: "short", day: "numeric", year: "numeric", timeZone: "UTC",
 });
 
 // Browse the current API batch; search and sorting never imply full-dataset coverage.
@@ -144,7 +142,7 @@ function Discovery() {
                     <th scope="row">{company.name}</th>
                     <td className="amount">{company.amount === null ? "—" : money.format(company.amount)}</td>
                     <td className="stage">{company.stage?.replaceAll("-", " ").replaceAll("_", " ") ?? "—"}</td>
-                    <td>{company.date === null ? "—" : dateFormat.format(company.date)}</td>
+                    <td>{company.date === null ? "—" : formatDateTime(company.date, "UTC")}</td>
                     <td>{company.website ? <a href={company.website} target="_blank" rel="noopener noreferrer"
                       aria-label={`Visit ${company.name} website (opens in a new tab)`}>Visit website</a> : "—"}</td>
                   </tr>)}</tbody>
@@ -173,7 +171,7 @@ export default function Home() {
   return <>
     <nav className="app-navigation" aria-label="Application sections">
       <button aria-pressed={tab === "discovery"} onClick={() => setTab("discovery")}>Discovery</button>
-      <button aria-pressed={tab === "tracker"} onClick={() => { setTrackerVisited(true); setTab("tracker"); }}>Tracker</button>
+      <button aria-pressed={tab === "tracker"} onClick={() => { setTrackerVisited(true); setTab("tracker"); }}>✦ Tracker Workspace <span className="navigation-live">LIVE</span></button>
     </nav>
     <div hidden={tab !== "discovery"}><Discovery /></div>
     {trackerVisited && <div hidden={tab !== "tracker"}><Tracker active={tab === "tracker"} /></div>}

@@ -1,14 +1,13 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
+import { formatDateTime } from "@/lib/date-time";
+import { useEffect, useRef, useState } from "react";
+import InlineField, { InlineBusyContext, InlineEditingContext } from "./tracker-inline-field";
 import ContactOutreach from "./tracker-outreach";
-import type { FormEvent } from "react";
 import type { ContactProgress, TrackerCompany, TrackerContact } from "@/lib/tracker";
 
 type Contact = TrackerContact & ContactProgress;
 type Company = Omit<TrackerCompany, "contacts"> & { contacts: Contact[] };
-type Editor = { kind: "company"; company?: Company } | { kind: "contact"; company: Company; contact?: Contact };
-type Sort = "due" | "overdue" | "recent";
 const labels: Record<ContactProgress["status"], string> = {
   uncontacted: "Uncontacted", awaiting_follow_up_1: "Awaiting first follow-up",
   awaiting_follow_up_2: "Awaiting second follow-up", responded: "Responded",
@@ -23,71 +22,24 @@ async function request(url: string, options?: RequestInit) {
   return data;
 }
 
-// One editor handles company/contact details; saved API results remain the source of truth.
-function DetailsForm({ editor, onSave, onCancel }: {
-  editor: Editor;
-  onSave: (url: string, method: string, values: Record<string, unknown>) => Promise<void>;
-  onCancel: () => void;
-}) {
-  const existing = editor.kind === "company" ? editor.company : editor.contact;
-  const [name, setName] = useState(existing?.name ?? "");
-  const [notes, setNotes] = useState(editor.kind === "company" ? editor.company?.notes ?? "" : "");
-  const [email, setEmail] = useState(editor.kind === "contact" ? editor.contact?.email ?? "" : "");
-  const [links, setLinks] = useState(editor.kind === "contact" ? editor.contact?.links.join("\n") ?? "" : "");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const submitting = useRef(false);
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (submitting.current) return;
-    submitting.current = true;
-    setSaving(true);
-    setError("");
-    const url = editor.kind === "company"
-      ? `/api/tracker/companies${existing ? `/${existing.id}` : ""}`
-      : existing ? `/api/tracker/contacts/${existing.id}` : `/api/tracker/companies/${editor.company.id}/contacts`;
-    try {
-      await onSave(url, existing ? "PATCH" : "POST", editor.kind === "company" ? { name, notes } : {
-        name, email, links: links.split("\n").map(link => link.trim()).filter(Boolean),
-      });
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not save changes.");
-    } finally {
-      submitting.current = false;
-      setSaving(false);
-    }
-  }
-
-  return <form className="tracker-editor" onSubmit={submit} aria-labelledby="editor-title">
-    <h2 id="editor-title">{existing ? "Edit" : "Add"} {editor.kind}{editor.kind === "contact" ? ` · ${editor.company.name}` : ""}</h2>
-    <fieldset disabled={saving}>
-      <div className="control"><label htmlFor="tracker-name">Name</label>
-        <input id="tracker-name" value={name} onChange={event => setName(event.target.value)} required autoFocus /></div>
-      {editor.kind === "company" ? <div className="control"><label htmlFor="tracker-notes">Summary / notes (optional)</label>
-        <textarea id="tracker-notes" rows={4} value={notes} onChange={event => setNotes(event.target.value)} /></div>
-        : <>
-          <div className="control"><label htmlFor="tracker-email">Email (optional)</label>
-            <input id="tracker-email" type="email" value={email} onChange={event => setEmail(event.target.value)} /></div>
-          <div className="control"><label htmlFor="tracker-links">Links (optional, one per line)</label>
-            <textarea id="tracker-links" rows={3} value={links} onChange={event => setLinks(event.target.value)} /></div>
-        </>}
-      <div className="tracker-actions"><button type="submit" disabled={!name.trim()}>{saving ? "Saving…" : "Save"}</button>
-        <button type="button" onClick={onCancel}>Cancel</button></div>
-    </fieldset>
-    {saving && <p role="status">Saving changes…</p>}
-    {error && <p role="alert">{error}</p>}
-  </form>;
-}
-
 // Load saved companies, display derived outreach state, and merge only confirmed saves.
 export default function Tracker({ active }: { active: boolean }) {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
-  const [editor, setEditor] = useState<Editor | null>(null);
-  const [sort, setSort] = useState<Sort>("due");
+  const [inlineCount, setInlineCount] = useState(0);
+  const writeQueue = useRef<Promise<void>>(Promise.resolve());
+  const [creatingCompany, setCreatingCompany] = useState(false);
+  const [createError, setCreateError] = useState("");
+  const creatingCompanyRef = useRef(false);
+  const [creatingContact, setCreatingContact] = useState(false);
+  const [contactError, setContactError] = useState("");
+  const creatingContactRef = useRef(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [contactId, setContactId] = useState<string | null>(null);
+  const [outreachBusy, setOutreachBusy] = useState(false);
+  const [query, setQuery] = useState("");
   const [notice, setNotice] = useState("");
   const addButton = useRef<HTMLButtonElement>(null);
   const loaded = useRef(false);
@@ -138,12 +90,7 @@ export default function Tracker({ active }: { active: boolean }) {
     };
   }, [active, attempt]);
 
-  function closeEditor() {
-    setEditor(null);
-    addButton.current?.focus();
-  }
-
-  async function save(url: string, method: string, values: Record<string, unknown>) {
+  async function persist(url: string, method: string, values: Record<string, unknown>) {
     // Invalidate overlapping reads both before and after persistence.
     writes.current += 1;
     revision.current += 1;
@@ -154,65 +101,163 @@ export default function Tracker({ active }: { active: boolean }) {
       setCompanies(current => current.some(company => company.id === data.companyId)
         ? current.map(company => company.id === data.companyId ? data.company : company)
         : [...current, data.company]);
+      if (method === "POST" && url === "/api/tracker/companies") setSelectedId(data.company.id);
       setNotice("Changes saved.");
-      if (editor) closeEditor();
+      if (method === "POST" && url === `/api/tracker/companies/${data.company.id}/contacts`) {
+        setContactId(data.company.contacts.at(-1)?.id ?? null);
+      }
     } finally {
       writes.current -= 1;
       revision.current += 1;
     }
   }
 
+  // Apply full-company responses in write order so rapid field saves cannot roll back the UI.
+  function save(url: string, method: string, values: Record<string, unknown>) {
+    const operation = writeQueue.current.then(() => persist(url, method, values));
+    writeQueue.current = operation.catch(() => {});
+    return operation;
+  }
+
+  // Create a saved placeholder so the normal workspace owns all subsequent edits.
+  async function addCompany() {
+    if (creatingCompanyRef.current) return;
+    creatingCompanyRef.current = true;
+    setCreatingCompany(true);
+    setCreateError("");
+    setNotice("");
+    try {
+      await save("/api/tracker/companies", "POST", { name: "Untitled company", notes: "" });
+      setQuery("");
+      setContactId(null);
+    } catch (cause) {
+      setCreateError(cause instanceof Error ? cause.message : "Could not create company.");
+    } finally {
+      creatingCompanyRef.current = false;
+      setCreatingCompany(false);
+    }
+  }
+
+  // Select the appended contact only after persistence confirms its stable ID.
+  async function addContact() {
+    if (!selectedId || creatingContactRef.current) return;
+    creatingContactRef.current = true;
+    setCreatingContact(true);
+    setContactError("");
+    setNotice("");
+    try {
+      await save(`/api/tracker/companies/${selectedId}/contacts`, "POST", { name: "Untitled contact", email: "", links: [] });
+    } catch (cause) {
+      setContactError(cause instanceof Error ? cause.message : "Could not create contact.");
+    } finally {
+      creatingContactRef.current = false;
+      setCreatingContact(false);
+    }
+  }
+
+  const detailsLocked = creatingCompany || creatingContact || outreachBusy;
+  const navigationLocked = detailsLocked || inlineCount > 0;
+
   const contactCount = companies.reduce((count, company) => count + company.contacts.length, 0);
 
   // Sort within each company, retaining contacts with no pending follow-up.
   function sortedContacts(company: Company) {
-    const lastSent = (contact: Contact) => Math.max(0, ...contact.sequences.flatMap(sequence => sequence.messages.map(message => Date.parse(message.sentAt))));
     return [...company.contacts].sort((a, b) => {
-      if (sort === "overdue" && a.isOverdue !== b.isOverdue) return a.isOverdue ? -1 : 1;
-      const left = sort === "recent" ? lastSent(a) : a.nextFollowUpAt ? Date.parse(a.nextFollowUpAt) : Infinity;
-      const right = sort === "recent" ? lastSent(b) : b.nextFollowUpAt ? Date.parse(b.nextFollowUpAt) : Infinity;
-      return (sort === "recent" ? right - left : left - right) || a.name.localeCompare(b.name);
+      const left = a.nextFollowUpAt ? Date.parse(a.nextFollowUpAt) : Infinity;
+      const right = b.nextFollowUpAt ? Date.parse(b.nextFollowUpAt) : Infinity;
+      return left - right || a.name.localeCompare(b.name);
     });
   }
 
-  return <main className="desktop"><section className="window companies-window" aria-labelledby="tracker-title">
-    <div className="title-bar"><div className="title-bar-text">Outreach Tracker</div></div>
-    <div className="window-body">
-      <header className="intro"><h1 id="tracker-title">Outreach Tracker</h1><p>Companies, contacts, and your outreach progress.</p></header>
-      <div className="toolbar"><button ref={addButton} disabled={loading || !!error || !!editor} onClick={() => { setNotice(""); setEditor({ kind: "company" }); }}>Add company</button>
-        <div className="control"><label htmlFor="tracker-sort">Sort contacts within companies by</label>
-          <select id="tracker-sort" value={sort} onChange={event => setSort(event.target.value as Sort)}>
-            <option value="due">Next follow-up date</option><option value="overdue">Overdue first</option><option value="recent">Most recent outreach</option>
-          </select></div></div>
-      <p role="status" className="tracker-notice">{notice}</p>
-      {refreshError && <div role="alert"><p>Could not refresh: {refreshError} Showing previously loaded data.</p>
-        <button onClick={() => setAttempt(value => value + 1)}>Retry refresh</button></div>}
-      {loading ? <p role="status">Loading tracker…</p> : error ? <div role="alert"><p>{error}</p><button onClick={() => setAttempt(value => value + 1)}>Retry</button></div> : <>
-        {editor?.kind === "company" && !editor.company && <DetailsForm editor={editor} onSave={save} onCancel={closeEditor} />}
-        {companies.length === 0 ? <p className="message">No companies yet. Add a company to start tracking contacts.</p> : <>
-          <h2>Companies</h2>
-          <ul className="tracker-companies">{companies.map(company => <li key={company.id}>
-            <details open>
-              <summary><strong>{company.name}</strong><span> · {company.contacts.length} contacts</span></summary>
-              {company.notes && <p className="tracker-notes">{company.notes}</p>}
-              <div className="tracker-actions"><button disabled={!!editor} onClick={() => { setNotice(""); setEditor({ kind: "company", company }); }} aria-label={`Edit company ${company.name}`}>Edit company</button>
-                <button disabled={!!editor} onClick={() => { setNotice(""); setEditor({ kind: "contact", company }); }} aria-label={`Add contact to ${company.name}`}>Add contact</button></div>
-              {editor?.company?.id === company.id && <DetailsForm editor={editor} onSave={save} onCancel={closeEditor} />}
-              {company.contacts.length === 0 ? <p>No contacts yet. Add a contact to {company.name}.</p> : <div className="table-scroll" role="region" aria-label={`Contacts at ${company.name}`} tabIndex={0}>
-                <table><caption className="sr-only">Contacts at {company.name}, including uncontacted contacts. Dates use local time.</caption>
-                  <thead><tr><th scope="col">Contact</th><th scope="col">Progress</th><th scope="col">Next follow-up (local)</th><th scope="col">Details</th></tr></thead>
-                  <tbody>{sortedContacts(company).map(contact => <Fragment key={contact.id}><tr>
-                    <th scope="row">{contact.name}{contact.email && <div className="tracker-secondary">{contact.email}</div>}
-                      {contact.links.map((link, index) => <div className="tracker-secondary" key={index}>{/^https?:\/\//i.test(link)
-                        ? <a href={link} target="_blank" rel="noopener noreferrer">{link}</a> : link}</div>)}</th>
-                    <td>{labels[contact.status]}</td><td>{contact.nextFollowUpAt ? <><time dateTime={contact.nextFollowUpAt}>{new Date(contact.nextFollowUpAt).toLocaleString()}</time>{contact.isOverdue && <strong className="tracker-overdue"> · Overdue</strong>}</> : "—"}</td>
-                    <td><button disabled={!!editor} onClick={() => { setNotice(""); setEditor({ kind: "contact", company, contact }); }} aria-label={`Edit contact ${contact.name} at ${company.name}`}>Edit contact</button></td>
-                  </tr><tr><td colSpan={4}><ContactOutreach contact={contact} disabled={!!editor} onSave={save} /></td></tr></Fragment>)}</tbody></table>
-              </div>}
-            </details>
-          </li>)}</ul>
+  const selected = companies.find(company => company.id === selectedId);
+  const contacts = selected ? sortedContacts(selected) : [];
+  const contact = contacts.find(person => person.id === contactId);
+  const outreachCount = contacts.reduce((count, person) => count + person.sequences.length, 0);
+  const links = [...new Set(contacts.flatMap(person => person.links))];
+  const visible = companies.filter(company => `${company.name} ${company.notes} ${company.contacts.map(person => person.name).join(" ")}`.toLowerCase().includes(query.trim().toLowerCase()));
+
+  return <InlineEditingContext.Provider value={setInlineCount}><InlineBusyContext.Provider value={inlineCount > 0}><main className="tracker-desktop">
+    <section className="window tracker-panel applications-panel" aria-labelledby="tracker-title">
+      <div className="title-bar workspace-title" id="tracker-title"><div className="title-bar-text">📁 Applications</div></div>
+      <div className="workspace-strip"><strong>All ({companies.length})</strong>
+        <button ref={addButton} disabled={loading || !!error || navigationLocked} onClick={addCompany}>{creatingCompany ? "Creating…" : "+ New"}</button></div>
+      {createError && <p role="alert" className="workspace-alert">{createError}</p>}
+      <div className="application-search"><label className="sr-only" htmlFor="tracker-search">Search applications</label>
+        <input id="tracker-search" type="search" disabled={inlineCount > 0} placeholder="Search targets or contacts…" value={query} onChange={event => setQuery(event.target.value)} /></div>
+      <div className="application-list">
+        {loading ? <p role="status">Loading tracker…</p> : error ? <div role="alert"><p>{error}</p><button onClick={() => setAttempt(value => value + 1)}>Retry</button></div> : <>
+          {visible.map(company => <button key={company.id} className={`application-row ${selected?.id === company.id ? "is-selected" : ""}`}
+            disabled={navigationLocked} aria-pressed={selected?.id === company.id} onClick={() => { setSelectedId(company.id); setContactId(null); setContactError(""); setNotice(""); }}>
+            <strong>{selected?.id === company.id && <span className="selection-marker">▸ </span>}{company.name}</strong>
+            <span className={company.contacts.some(person => person.status === "responded") ? "workspace-badge" : "application-meta"}>
+              {company.contacts.some(person => person.status === "responded") ? "Responded" : company.contacts.some(person => person.isOverdue) ? "Follow-up due" : `${company.contacts.length} contacts`}</span>
+          </button>)}
+          {!visible.length && <p className="workspace-empty">{companies.length ? "No matching applications." : "Add a company to start tracking outreach."}</p>}
         </>}
-      </>}
-    </div><footer className="status-bar"><p className="status-bar-field">{loading ? "Loading…" : `${companies.length} companies · ${contactCount} contacts`}</p></footer>
-  </section></main>;
+      </div>
+      <footer className="workspace-footer">{companies.length} companies · {contactCount} contacts</footer>
+    </section>
+
+    <div className="tracker-middle">
+    <section className="window tracker-panel company-panel" aria-label="Company workspace">
+      <div className="title-bar workspace-title"><div className="title-bar-text">💼 {selected ? `${selected.name} — Company Workspace` : "Company Workspace"}</div></div>
+      {refreshError && <div role="alert" className="workspace-alert"><p>Could not refresh: {refreshError} Showing previously loaded data.</p><button onClick={() => setAttempt(value => value + 1)}>Retry refresh</button></div>}
+      <div role="status" className={notice ? "workspace-notice" : "sr-only"}>{notice}</div>
+      {selected ? <>
+        <header className="company-heading"><div className="company-heading-row"><h1><InlineField key={selected.id} label="company name" value={selected.name} required disabled={detailsLocked} onSave={name => save(`/api/tracker/companies/${selected.id}`, "PATCH", { name })} /></h1></div>
+          <div className="company-links"><strong>LINKS:</strong>{links.filter(link => /^https?:\/\//i.test(link)).map(link => <a key={link} href={link} target="_blank" rel="noopener noreferrer">{link.replace(/^https?:\/\//i, "").replace(/\/$/, "")} ↗</a>)}
+            {!links.length && <span>Add links through a contact.</span>}</div>
+        </header>
+        <section className="company-intel" aria-labelledby="intel-title"><div className="workspace-strip"><strong id="intel-title">📝 NOTES &amp; INTEL</strong><span>Company research &amp; preparation</span></div>
+          <div className="intel-body"><InlineField key={selected.id} label="company notes" value={selected.notes} multiline disabled={detailsLocked} placeholder="Add company research, notes, and interview preparation…" onSave={notes => save(`/api/tracker/companies/${selected.id}`, "PATCH", { notes })} /></div></section>
+      </> : <p className="workspace-empty">Select or create a company to open its workspace.</p>}
+    </section>
+
+    <section className="window tracker-panel contacts-panel" aria-labelledby="contacts-window-title">
+      <div className="title-bar workspace-title" id="contacts-window-title"><div className="title-bar-text">👥 Contacts</div></div>
+      {selected ? <><div className="workspace-strip"><div><strong id="contacts-title">CONTACTS</strong> <span className="logged-count">{contacts.length} contacts</span></div>
+          <button disabled={navigationLocked} onClick={addContact}>{creatingContact ? "Creating…" : "+ Add contact"}</button></div>
+          {contactError && <p role="alert" className="workspace-alert">{contactError}</p>}
+          <div className="history-body">
+            {contacts.map(person => <button key={person.id} disabled={navigationLocked} className={`touchpoint-row ${contact?.id === person.id ? "is-selected" : ""}`} aria-pressed={contact?.id === person.id}
+              onClick={() => { setContactId(person.id); setNotice(""); }}>
+              <span className="selection-marker">{contact?.id === person.id ? "▸" : "▹"}</span>
+              <span className="touchpoint-copy"><strong>{person.name}</strong><span className="touchpoint-preview">{person.email || "No email added"}</span></span>
+              <span className="touchpoint-meta"><span>{labels[person.status]}</span>
+                {person.nextFollowUpAt && <time dateTime={person.nextFollowUpAt}>Next: {formatDateTime(person.nextFollowUpAt)}{person.isOverdue ? " · Overdue" : ""}</time>}
+              </span>
+            </button>)}
+            {!contacts.length && <p className="workspace-empty">No contacts yet. Add a contact to start tracking outreach.</p>}
+          </div>
+      </> : <p className="workspace-empty">Select a company to view its contacts.</p>}
+    </section>
+    </div>
+
+    <aside className="window tracker-panel inspector-panel" id="outreach-inspector" aria-label="Contact details and outreach">
+      <div className="title-bar workspace-title"><div className="title-bar-text">🔍 {contact ? "Contact Details & Outreach" : "Company Overview"}</div></div>
+      {selected && <div className="inspector-body">
+        {contact ? <>
+          <section className="inspector-card" key={contact.id}>
+            <h2>CONTACT DETAILS</h2>
+            <article className="inspector-contact">
+              <InlineField label="contact name" value={contact.name} required disabled={detailsLocked} onSave={name => save(`/api/tracker/contacts/${contact.id}`, "PATCH", { name })} />
+              <InlineField label="contact email" value={contact.email} type="email" disabled={detailsLocked} placeholder="Add email…" onSave={email => save(`/api/tracker/contacts/${contact.id}`, "PATCH", { email })} />
+              <InlineField label="contact links" value={contact.links.join("\n")} multiline disabled={detailsLocked} placeholder="Add links, one per line…" onSave={value => save(`/api/tracker/contacts/${contact.id}`, "PATCH", { links: value.split("\n").map(link => link.trim()).filter(Boolean) })} />
+              <div className="contact-link-list">{contact.links.filter(link => /^https?:\/\//i.test(link)).map((link, index) => <a key={index} href={link} target="_blank" rel="noopener noreferrer">Open link {index + 1} ↗</a>)}</div>
+              <p>{labels[contact.status]}</p>
+              {contact.nextFollowUpAt && <p className={contact.isOverdue ? "tracker-overdue" : "workspace-muted"}>Next follow-up: {formatDateTime(contact.nextFollowUpAt)}{contact.isOverdue ? " · Overdue" : ""}</p>}
+            </article>
+          </section>
+          <section className="inspector-card">
+            <ContactOutreach key={contact.id} contact={contact} disabled={creatingCompany || creatingContact} onSave={save}
+              onBusyChange={setOutreachBusy} />
+          </section>
+        </> : <section className="inspector-card"><h2>{selected.name} · OVERVIEW</h2>
+          <p>{contacts.length} contacts · {outreachCount} outreach attempts</p>
+          <p>{contacts.filter(person => person.status === "responded").length} responded · {contacts.filter(person => person.isOverdue).length} overdue</p>
+          <p>Select a contact to view its details and outreach history.</p>
+        </section>}
+      </div>}
+    </aside>
+  </main></InlineBusyContext.Provider></InlineEditingContext.Provider>;
 }

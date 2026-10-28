@@ -50,6 +50,27 @@ async function load(filePath: string): Promise<TrackerData> {
     throw new Error("Tracker file contains invalid JSON; saved data was not changed.", { cause });
   }
   if (!validData(data)) throw new Error("Tracker file has an invalid structure; saved data was not changed.");
+  // Older files may contain drafts; retain their content and dates as ordinary messages.
+  for (const company of data.companies) for (const contact of company.contacts) {
+    let hadDraft = false;
+    for (const sequence of contact.sequences) for (const message of sequence.messages) {
+      const legacy = message as typeof message & { draft?: boolean };
+      hadDraft ||= legacy.draft === true;
+      delete legacy.draft;
+    }
+    if (!hadDraft) continue;
+    contact.sequences.forEach((sequence, index) => {
+      if (sequence.closedAt !== null) return;
+      const next = contact.sequences[index + 1];
+      if (next) {
+        sequence.closedAt = next.messages[0].sentAt;
+        sequence.closeReason = "restarted";
+      } else if (sequence.messages.length === 3) {
+        sequence.closedAt = sequence.messages[2].sentAt;
+        sequence.closeReason = "completed";
+      }
+    });
+  }
   return data;
 }
 

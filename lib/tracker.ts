@@ -82,7 +82,7 @@ export function updateContact(contact: TrackerContact, patch: Partial<ContactInp
 }
 
 function message(input: MessageInput, kind: MessageKind, now: Date): TrackerMessage {
-  return { id: crypto.randomUUID(), kind, text: requiredText(input.text, "Message text"),
+  return { id: crypto.randomUUID(), kind, text: optionalText(input.text, "Message text"),
     sentAt: timestamp(input.sentAt, now), notes: optionalText(input.notes, "Notes") };
 }
 
@@ -149,7 +149,7 @@ export function editMessage(contact: TrackerContact, id: string, patch: Partial<
   const sequence = contact.sequences[index];
   const existing = sequence.messages[messageIndex];
   const updated = { ...existing,
-    ...(patch.text !== undefined ? { text: requiredText(patch.text, "Message text") } : {}),
+    ...(patch.text !== undefined ? { text: optionalText(patch.text, "Message text") } : {}),
     ...(patch.sentAt !== undefined ? { sentAt: timestamp(patch.sentAt, now) } : {}),
     ...(patch.notes !== undefined ? { notes: optionalText(patch.notes, "Notes") } : {}) };
   const messages = sequence.messages.map((entry, i) => i === messageIndex ? updated : entry);
@@ -177,4 +177,14 @@ export function deriveContactProgress(contact: TrackerContact, now = new Date())
   const due = Date.parse(sequence.messages.at(-1)!.sentAt) + 72 * 60 * 60 * 1000;
   return { status: sequence.messages.length === 1 ? "awaiting_follow_up_1" : "awaiting_follow_up_2",
     nextFollowUpAt: new Date(due).toISOString(), isOverdue: due < now.getTime() };
+}
+
+// Correct explicit closure timestamps without changing why an attempt ended.
+export function editClosure(contact: TrackerContact, id: string, at: string, now = new Date()): TrackerContact {
+  const index = sequenceIndex(contact, id);
+  const sequence = contact.sequences[index];
+  if (sequence.closeReason !== "responded" && sequence.closeReason !== "manual") throw new TrackerError("conflict", "Closure time is derived for this attempt.");
+  const closedAt = timestamp(at, now);
+  if (Date.parse(closedAt) < Date.parse(sequence.messages.at(-1)!.sentAt)) throw new TrackerError("conflict", "Closure cannot precede the last message.");
+  return replaceSequence(contact, index, { ...sequence, closedAt, ...(sequence.closeReason === "responded" ? { respondedAt: closedAt } : {}) });
 }

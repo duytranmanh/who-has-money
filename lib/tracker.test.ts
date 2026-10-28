@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import fixture from "../fixtures/companies.json";
 import {
   closeSequence, createCompany, createContact, deleteMessage, deriveContactProgress,
-  editMessage, recordFollowUp, startSequence, TrackerError, updateCompany, updateContact,
+  editClosure, editMessage, recordFollowUp, startSequence, TrackerError, updateCompany, updateContact,
 } from "./tracker";
 
 const now = new Date("2026-11-10T12:00:00Z");
@@ -92,7 +92,6 @@ describe("sequence timing and transitions", () => {
   it("restarts atomically and uses creation order for backdated outreach", () => {
     const contact = started();
     const original = structuredClone(contact);
-    expectError(() => startSequence(contact, { ...input(), text: "" }, now), "invalid_input");
     const restarted = startSequence(contact, input("2026-10-01T00:00:00Z"), now);
     expect(contact).toEqual(original);
     expect(restarted.sequences[0].closeReason).toBe("restarted");
@@ -104,11 +103,10 @@ describe("sequence timing and transitions", () => {
     expectError(() => startSequence(createContact({ name: "Alex" }), input(sentAt), now), "invalid_input");
   });
 
-  it("requires explicit timestamps, message text, ordered sends, and valid closure times", () => {
+  it("requires explicit timestamps, ordered sends, and valid closure times", () => {
     const contact = followed();
     const id = contact.sequences[0].id;
     expectError(() => startSequence(contact, { text: "Hi" } as never, now), "invalid_input");
-    expectError(() => recordFollowUp(contact, id, { ...input(), text: " " }, now), "invalid_input");
     expectError(() => recordFollowUp(contact, id, input("2026-11-03T15:00:00Z"), now), "conflict");
     expectError(() => closeSequence(contact, id, "close", initialAt, now), "conflict");
     expectError(() => recordFollowUp(contact, "missing", input(), now), "not_found");
@@ -168,5 +166,28 @@ describe("message corrections", () => {
     expect(deleteMessage(contact, contact.sequences[0].messages[0].id).sequences).toEqual([]);
     expectError(() => deleteMessage(contact, "missing"), "not_found");
     expectError(() => editMessage(contact, "missing", {}, now), "not_found");
+  });
+});
+
+describe("empty outreach", () => {
+  it("tracks empty messages and follow-ups by date and lets text be cleared", () => {
+    let contact = startSequence(createContact({ name: "Alex" }), { text: "", sentAt: initialAt }, now);
+    const id = contact.sequences[0].id;
+    expect(deriveContactProgress(contact, now).status).toBe("awaiting_follow_up_1");
+    contact = recordFollowUp(contact, id, { text: "", sentAt: "2026-11-03T15:00:00Z" }, now);
+    expect(deriveContactProgress(contact, now).nextFollowUpAt).toBe("2026-11-06T15:00:00.000Z");
+    contact = editMessage(contact, contact.sequences[0].messages[1].id, { text: "", notes: "" }, now);
+    contact = recordFollowUp(contact, id, { text: "", sentAt: "2026-11-06T15:00:00Z" }, now);
+    expect(deriveContactProgress(contact, now).status).toBe("completed");
+    expect(contact.sequences[0].messages.every(message => message.text === "")).toBe(true);
+  });
+
+  it("corrects response times without changing the closure reason", () => {
+    const original = started();
+    const id = original.sequences[0].id;
+    const closed = closeSequence(original, id, "record_response", "2026-11-02T12:00:00Z", now);
+    const edited = editClosure(closed, id, "2026-11-03T12:00:00Z", now);
+    expect(edited.sequences[0]).toMatchObject({ closeReason: "responded", closedAt: "2026-11-03T12:00:00.000Z", respondedAt: "2026-11-03T12:00:00.000Z" });
+    expectError(() => editClosure(edited, id, "2026-01-01T00:00:00Z", now), "conflict");
   });
 });

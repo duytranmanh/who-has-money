@@ -69,8 +69,10 @@ body { background: #4a7596; }
 .app-navigation button[aria-pressed="true"] { background: #ece9d8; box-shadow: none; }
 .navigation-live { display: inline-block; margin-left: 8px; padding: 1px 4px; background: #0a246a; color: white; font-size: 10px; }
 .tracker-desktop { display: grid; grid-template-columns: minmax(210px, 1fr) minmax(420px, 2.03fr) minmax(280px, 1fr); gap: 9px; height: calc(100dvh - 43px); min-height: 640px; padding: 0 9px 9px; color: #18212f; }
-.tracker-panel { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: #ece9d8; border: 1px solid #111; box-shadow: inset 1px 1px #fff, inset -1px -1px #808080; overflow: auto; }
-.workspace-title { flex-shrink: 0; padding: 6px 9px; background: linear-gradient(90deg, #104a7b, #286ea6); color: white; font-weight: bold; font-size: 12px; letter-spacing: .1px; }
+.tracker-panel { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: auto; }
+.tracker-middle { display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); gap: 9px; min-width: 0; min-height: 0; }
+.workspace-title { flex-shrink: 0; }
+.workspace-title .title-bar-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tracker-desktop button { font-family: inherit; font-size: 11px; border-radius: 0; }
 .workspace-strip { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 9px; border-bottom: 1px solid #b5b2a5; background: #ece9d8; flex-shrink: 0; }
 .workspace-strip > span { font: 10px monospace; color: #6b7280; }
@@ -90,13 +92,13 @@ body { background: #4a7596; }
 .company-heading h1 { margin: 0; font-size: 20px; overflow-wrap: anywhere; }
 .company-links { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 12px; padding-top: 8px; border-top: 1px solid #d0ccc0; font-size: 10px; color: #667080; }
 .company-links a { background: white; border: 1px solid #7f9db9; padding: 2px 4px; font-family: monospace; overflow-wrap: anywhere; }
-.company-intel { flex: 3; min-height: 220px; display: flex; flex-direction: column; }
+.company-intel { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .company-intel .workspace-strip, .touchpoint-history .workspace-strip { font-size: 10px; }
-.intel-body { flex: 1; background: white; padding: 14px 12px; overflow: auto; }
+.intel-body { flex: 1; min-height: 0; background: white; padding: 14px 12px; overflow: auto; }
 .intel-body .tracker-notes { margin: 0; font: 12px/1.65 monospace; }
 .touchpoint-history { flex: 2; display: flex; flex-direction: column; min-height: 220px; border-top: 1px solid #b5b2a5; }
 .logged-count { display: inline-block; border: 1px solid #7f9db9; background: white; color: #667080; margin-left: 6px; padding: 1px 4px; font: 10px monospace; }
-.history-body { padding: 6px; background: white; flex: 1; overflow: auto; }
+.history-body { min-height: 0; padding: 6px; background: white; flex: 1; overflow: auto; }
 .history-sort { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; color: #687080; font-size: 10px; }
 .history-sort select { font: inherit; }
 .tracker-desktop .touchpoint-row { display: flex; width: 100%; align-items: flex-start; gap: 8px; padding: 10px 8px; margin-bottom: 6px; border: 1px solid #cbd1dc; background: #faf8f2; text-align: left; box-shadow: none; color: #18212f; }
@@ -134,14 +136,14 @@ body { background: #4a7596; }
 @media (max-width: 1100px) {
   .tracker-desktop { grid-template-columns: 210px minmax(0, 1fr); height: auto; min-height: calc(100dvh - 43px); }
   .applications-panel { grid-row: span 2; }
-  .company-panel { min-height: 650px; }
+  .tracker-middle { height: 650px; }
   .inspector-panel { grid-column: 2; }
 }
 @media (max-width: 680px) {
   .tracker-desktop { display: flex; flex-direction: column; padding: 0 8px 8px; }
   .application-list { max-height: 220px; }
   .applications-panel { min-height: 160px; }
-  .company-panel { min-height: 600px; }
+  .tracker-middle { height: 650px; flex-shrink: 0; }
   .inspector-body { overflow: visible; }
   .touchpoint-meta { max-width: 36%; }
   .company-intel .workspace-strip > span { display: none; }

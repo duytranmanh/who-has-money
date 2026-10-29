@@ -172,10 +172,16 @@ export function deleteMessage(contact: TrackerContact, id: string): TrackerConta
 // Compute from the newest attempt and a supplied clock; never persist these values.
 export function deriveContactProgress(contact: TrackerContact, now = new Date()): ContactProgress {
   const sequence = contact.sequences.at(-1);
-  if (!sequence) return { status: "uncontacted", nextFollowUpAt: null, isOverdue: false };
-  if (sequence.closedAt !== null) return { status: sequence.closeReason!, nextFollowUpAt: null, isOverdue: false };
-  const due = Date.parse(sequence.messages.at(-1)!.sentAt) + 72 * 60 * 60 * 1000;
-  return { status: sequence.messages.length === 1 ? "awaiting_follow_up_1" : "awaiting_follow_up_2",
+  return deriveOutreachProgress({ closeReason: sequence?.closeReason ?? null,
+    messageCount: sequence?.messages.length ?? 0, lastSentAt: sequence?.messages.at(-1)?.sentAt ?? null }, now);
+}
+
+// Summary queries and full history views use the same status and follow-up rules.
+export function deriveOutreachProgress(summary: { closeReason: CloseReason | null; messageCount: number; lastSentAt: string | null }, now = new Date()): ContactProgress {
+  if (summary.closeReason !== null) return { status: summary.closeReason, nextFollowUpAt: null, isOverdue: false };
+  if (!summary.messageCount || summary.lastSentAt === null) return { status: "uncontacted", nextFollowUpAt: null, isOverdue: false };
+  const due = Date.parse(summary.lastSentAt) + 72 * 60 * 60 * 1000;
+  return { status: summary.messageCount === 1 ? "awaiting_follow_up_1" : "awaiting_follow_up_2",
     nextFollowUpAt: new Date(due).toISOString(), isOverdue: due < now.getTime() };
 }
 

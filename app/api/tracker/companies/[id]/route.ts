@@ -11,7 +11,7 @@ export async function PATCH(request: Request, context: IdContext) {
   const { id } = await context.params;
   return trackerWrite(request, ["name", "notes"], [], (data, input) => {
     const company = updateCompany(findCompany(data, id), { name: input.name, notes: input.notes });
-    data.companies = data.companies.map(existing => existing.id === id ? company : existing);
+    data.updateCompany(company);
     return id;
   });
 }

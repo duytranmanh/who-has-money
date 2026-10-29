@@ -1,6 +1,11 @@
 import { updateCompany } from "@/lib/tracker";
-import { findCompany, trackerWrite } from "@/lib/tracker-api";
+import { findCompany, trackerCompanyRead, trackerWrite } from "@/lib/tracker-api";
 import type { IdContext } from "@/lib/tracker-api";
+
+export async function GET(_request: Request, context: IdContext) {
+  const { id } = await context.params;
+  return trackerCompanyRead(id);
+}
 
 export async function PATCH(request: Request, context: IdContext) {
   const { id } = await context.params;

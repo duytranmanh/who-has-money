@@ -52,8 +52,15 @@ export function openTrackerDatabase(filePath: string): DatabaseSync {
     if (version === 0) {
       db.exec(schema);
       db.exec("PRAGMA user_version = 1;");
-    } else if (version !== 1) {
+    } else if (version !== 1 && version !== 2) {
       throw new Error(`Unsupported tracker database schema version: ${version}.`);
+    }
+    if (version === 0 || version === 1) {
+      db.exec(`CREATE TABLE tracker_metadata (
+        key TEXT PRIMARY KEY NOT NULL,
+        value TEXT NOT NULL
+      ) STRICT;
+      PRAGMA user_version = 2;`);
     }
     db.exec("COMMIT;");
     return db;

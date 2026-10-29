@@ -25,9 +25,9 @@ function open() {
 
 it("creates the directory and schema, then preserves records on reopen", () => {
   const db = open();
-  expect(db.prepare("PRAGMA user_version").get()).toMatchObject({ user_version: 1 });
+  expect(db.prepare("PRAGMA user_version").get()).toMatchObject({ user_version: 2 });
   expect(db.prepare("SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name").all().map(row => row.name))
-    .toEqual(["companies", "contacts", "messages", "sequences"]);
+    .toEqual(["companies", "contacts", "messages", "sequences", "tracker_metadata"]);
   db.prepare("INSERT INTO companies VALUES (?, ?, ?, ?)").run("c", "Sample", "Notes", 0);
   db.close();
   const reopened = open();
@@ -46,6 +46,19 @@ it("rejects orphan contacts, sequences, and messages", () => {
     .toThrow(/FOREIGN KEY/);
 });
 
+it("upgrades a version one database without changing tracker rows", () => {
+  const db = open();
+  db.exec(`DROP TABLE tracker_metadata;
+    PRAGMA user_version = 1;
+    INSERT INTO companies VALUES ('old', 'Existing', 'Keep notes', 0);`);
+  db.close();
+  const upgraded = open();
+  expect(upgraded.prepare("PRAGMA user_version").get()).toMatchObject({ user_version: 2 });
+  expect(upgraded.prepare("SELECT * FROM tracker_metadata").all()).toEqual([]);
+  expect(upgraded.prepare("SELECT * FROM companies").get())
+    .toMatchObject({ id: "old", name: "Existing", notes: "Keep notes", position: 0 });
+});
+
 it("rolls back a failed multi-record transaction", () => {
   const db = open();
   db.exec("BEGIN IMMEDIATE");
@@ -62,13 +75,13 @@ it("rolls back a failed multi-record transaction", () => {
 
 it("leaves newer schemas untouched and releases the migration lock on failure", () => {
   const db = open();
-  db.exec("PRAGMA user_version = 2");
+  db.exec("PRAGMA user_version = 3");
   db.close();
-  expect(() => open()).toThrow("Unsupported tracker database schema version: 2");
+  expect(() => open()).toThrow("Unsupported tracker database schema version: 3");
   const raw = new DatabaseSync(path);
   connections.push(raw);
   raw.exec("BEGIN IMMEDIATE");
-  expect(raw.prepare("PRAGMA user_version").get()).toMatchObject({ user_version: 2 });
+  expect(raw.prepare("PRAGMA user_version").get()).toMatchObject({ user_version: 3 });
   raw.exec("ROLLBACK");
 });
 

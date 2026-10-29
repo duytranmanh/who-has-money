@@ -69,6 +69,29 @@ export async function trackerRead(): Promise<Response> {
   } catch (error) { return errorResponse(error); }
 }
 
+// Sidebar summaries retain search and badges without sending outreach history or contact details.
+export async function trackerCompanyList(): Promise<Response> {
+  try {
+    const data = await readTracker();
+    const now = new Date();
+    const companies = data.companies.map(company => ({ id: company.id, name: company.name, notes: company.notes,
+      contacts: company.contacts.map(contact => {
+        const progress = deriveContactProgress(contact, now);
+        return { id: contact.id, name: contact.name, status: progress.status, isOverdue: progress.isOverdue };
+      }) }));
+    return Response.json({ companies, computedAt: now.toISOString() }, { headers });
+  } catch (error) { return errorResponse(error); }
+}
+
+// Only the selected company's full history is sent to the workspace.
+export async function trackerCompanyRead(id: string): Promise<Response> {
+  try {
+    const data = await readTracker();
+    const now = new Date();
+    return Response.json({ company: companyView(findCompany(data, id), now), computedAt: now.toISOString() }, { headers });
+  } catch (error) { return errorResponse(error); }
+}
+
 export function findCompany(data: TrackerData, id: string): TrackerCompany {
   const company = data.companies.find(company => company.id === id);
   if (!company) throw new TrackerError("not_found", "Company not found.");

@@ -1,5 +1,7 @@
 import { createCompany } from "@/lib/tracker";
-import { trackerWrite } from "@/lib/tracker-api";
+import { trackerCompanyList, trackerWrite } from "@/lib/tracker-api";
+
+export const GET = trackerCompanyList;
 
 export async function POST(request: Request) {
   return trackerWrite(request, ["name", "notes"], ["name"], (data, input) => {

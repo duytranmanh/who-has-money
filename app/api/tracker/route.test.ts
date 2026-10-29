@@ -5,8 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fixture from "@/fixtures/companies.json";
 import { createTrackerStorage } from "@/lib/tracker-storage";
 import { GET } from "./route";
-import { POST as createCompany } from "./companies/route";
-import { PATCH as editCompany } from "./companies/[id]/route";
+import { POST as createCompany, GET as listCompanies } from "./companies/route";
+import { PATCH as editCompany, GET as getCompany } from "./companies/[id]/route";
 import { POST as createContact } from "./companies/[id]/contacts/route";
 import { PATCH as editContact } from "./contacts/[id]/route";
 import { POST as start } from "./contacts/[id]/sequences/route";
@@ -49,6 +49,31 @@ async function setup() {
 }
 
 describe("tracker API", () => {
+  it("lists sidebar summaries without full histories, email, or links", async () => {
+    const { companyId, contactId } = await setup();
+    await start(req(message(1)), ctx(contactId));
+    const response = await listCompanies();
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    const body = await response.json();
+    expect(body.companies).toEqual([{ id: companyId, name: fixture.companies[0].name, notes: "",
+      contacts: [{ id: contactId, name: "Alex", status: "awaiting_follow_up_1", isOverdue: true }] }]);
+  });
+
+  it("returns only the requested company's details and rejects missing IDs", async () => {
+    const { companyId, contactId } = await setup();
+    await createCompany(req({ name: "Other company" }));
+    await start(req(message(1)), ctx(contactId));
+    const response = await getCompany(new Request("http://localhost"), ctx(companyId));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.companies).toBeUndefined();
+    expect(body.company.id).toBe(companyId);
+    expect(body.company.contacts[0].sequences[0].messages[0].text).toBe("Hello");
+    expect(body.company.contacts[0].status).toBe("awaiting_follow_up_1");
+    expect((await getCompany(new Request("http://localhost"), ctx("missing"))).status).toBe(404);
+  });
+
   it("returns empty tracker data with a computation timestamp", async () => {
     const response = await GET();
     expect(response.status).toBe(200);

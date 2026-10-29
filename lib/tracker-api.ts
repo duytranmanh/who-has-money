@@ -1,6 +1,7 @@
-import { deriveContactProgress, TrackerError } from "./tracker";
-import type { TrackerCompany, TrackerContact, TrackerData } from "./tracker";
-import { readTracker, updateTracker } from "./tracker-storage";
+import { deriveContactProgress, deriveOutreachProgress, TrackerError } from "./tracker";
+import type { TrackerCompany, TrackerContact } from "./tracker";
+import { withTrackerStore, type TrackerStore } from "./tracker-storage";
+import { isDeepStrictEqual } from "node:util";
 
 export type IdContext = { params: Promise<{ id: string }> };
 const headers = { "Cache-Control": "no-store" };
@@ -40,55 +41,91 @@ async function body(request: Request, allowed: string[], required: string[]): Pr
   return record as Record<string, string> & { links?: string[] };
 }
 
-// Persist inside the queue, then derive the affected company's response from the saved snapshot.
+// Logic owns the transaction: read, apply domain rules, persist resource changes, and build the response together.
 export async function trackerWrite(
   request: Request,
   allowed: string[],
   required: string[],
-  change: (data: TrackerData, input: Record<string, string> & { links?: string[] }, now: Date) => string,
+  change: (data: TrackerStore, input: Record<string, string> & { links?: string[] }, now: Date) => string,
   status = 200,
 ): Promise<Response> {
   try {
     const input = allowed.length ? await body(request, allowed, required) : {} as Record<string, string>;
-    let companyId = "";
-    const saved = await updateTracker(data => {
-      companyId = change(data, input, new Date());
-      return data;
-    });
-    const now = new Date();
-    return Response.json({ companyId, company: companyView(findCompany(saved, companyId), now), computedAt: now.toISOString() }, { status, headers });
+    return withTrackerStore(store => store.transaction(() => {
+      const now = new Date();
+      const companyId = change(store, input, now);
+      return Response.json({ companyId, company: companyView(findCompany(store, companyId), now), computedAt: now.toISOString() }, { status, headers });
+    }));
   } catch (error) { return errorResponse(error); }
 }
 
 // GET recalculates due dates rather than persisting or caching derived values.
 export async function trackerRead(): Promise<Response> {
   try {
-    const data = await readTracker();
-    const now = new Date();
-    return Response.json({ companies: data.companies.map(company => companyView(company, now)), computedAt: now.toISOString() }, { headers });
+    return withTrackerStore(store => {
+      const now = new Date();
+      return Response.json({ companies: store.listCompanies().map(company => companyView(company, now)), computedAt: now.toISOString() }, { headers });
+    });
   } catch (error) { return errorResponse(error); }
 }
 
-export function findCompany(data: TrackerData, id: string): TrackerCompany {
-  const company = data.companies.find(company => company.id === id);
+// Sidebar summaries retain search and badges without sending outreach history or contact details.
+export async function trackerCompanyList(): Promise<Response> {
+  try {
+    return withTrackerStore(store => {
+      const now = new Date();
+      const companies = store.listCompanySummaries().map(company => ({ ...company,
+        contacts: company.contacts.map(({ lastSentAt, messageCount, closeReason, ...contact }) => {
+          const { status, isOverdue } = deriveOutreachProgress({ closeReason, messageCount, lastSentAt }, now);
+          return { ...contact, status, isOverdue };
+        }) }));
+      return Response.json({ companies, computedAt: now.toISOString() }, { headers });
+    });
+  } catch (error) { return errorResponse(error); }
+}
+
+// Only the selected company's full history is sent to the workspace.
+export async function trackerCompanyRead(id: string): Promise<Response> {
+  try {
+    return withTrackerStore(store => {
+      const now = new Date();
+      return Response.json({ company: companyView(findCompany(store, id), now), computedAt: now.toISOString() }, { headers });
+    });
+  } catch (error) { return errorResponse(error); }
+}
+
+export function findCompany(store: TrackerStore, id: string): TrackerCompany {
+  const company = store.getCompany(id);
   if (!company) throw new TrackerError("not_found", "Company not found.");
   return company;
 }
 
-// Locate nested history by its stable ID while retaining the owning company for write responses.
-export function findContact(data: TrackerData, kind: "contact" | "sequence" | "message", id: string): { company: TrackerCompany; contact: TrackerContact } {
-  for (const company of data.companies) {
-    for (const contact of company.contacts) {
-      const matches = kind === "contact" ? contact.id === id : contact.sequences.some(sequence =>
-        kind === "sequence" ? sequence.id === id : sequence.messages.some(message => message.id === id));
-      if (matches) return { company, contact };
-    }
-  }
-  throw new TrackerError("not_found", `${kind} not found.`);
+// Resolve ownership with SQL rather than scanning every company's history.
+export function findContact(store: TrackerStore, kind: "contact" | "sequence" | "message", id: string) {
+  const owner = store.findContactOwner(kind, id);
+  if (!owner) throw new TrackerError("not_found", `${kind} not found.`);
+  const contact = store.getContact(owner.contactId)!;
+  return { company: { id: owner.companyId }, contact };
 }
 
-// Replace only the matching contact in the loaded snapshot; storage owns committing that snapshot.
-export function replaceContact(company: TrackerCompany, updated: TrackerContact): string {
-  company.contacts = company.contacts.map(contact => contact.id === updated.id ? updated : contact);
+// Persist only changed resources from a domain operation; the API caller owns the transaction.
+export function replaceContact(store: TrackerStore, company: { id: string }, before: TrackerContact, updated: TrackerContact): string {
+  if (before.name !== updated.name || before.email !== updated.email || !isDeepStrictEqual(before.links, updated.links)) store.updateContact(updated);
+  for (const old of before.sequences) {
+    if (!updated.sequences.some(sequence => sequence.id === old.id)) store.deleteSequence(old.id);
+  }
+  for (const sequence of updated.sequences) {
+    const old = before.sequences.find(existing => existing.id === sequence.id);
+    if (!old) store.insertSequence(updated.id, sequence);
+    else if (old.closedAt !== sequence.closedAt || old.closeReason !== sequence.closeReason || old.respondedAt !== sequence.respondedAt) store.updateSequence(sequence);
+    for (const message of old?.messages ?? []) {
+      if (!sequence.messages.some(existing => existing.id === message.id)) store.deleteMessage(message.id);
+    }
+    for (const message of sequence.messages) {
+      const previous = old?.messages.find(existing => existing.id === message.id);
+      if (!previous) store.insertMessage(sequence.id, message);
+      else if (!isDeepStrictEqual(previous, message)) store.updateMessage(message);
+    }
+  }
   return company.id;
 }

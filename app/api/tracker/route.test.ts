@@ -1,12 +1,14 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fixture from "@/fixtures/companies.json";
+import { openTrackerDatabase } from "@/lib/tracker-db";
 import { createTrackerStorage } from "@/lib/tracker-storage";
+import type { DatabaseSync } from "node:sqlite";
 import { GET } from "./route";
-import { POST as createCompany } from "./companies/route";
-import { PATCH as editCompany } from "./companies/[id]/route";
+import { POST as createCompany, GET as listCompanies } from "./companies/route";
+import { PATCH as editCompany, GET as getCompany } from "./companies/[id]/route";
 import { POST as createContact } from "./companies/[id]/contacts/route";
 import { PATCH as editContact } from "./contacts/[id]/route";
 import { POST as start } from "./contacts/[id]/sequences/route";
@@ -16,20 +18,22 @@ import { PATCH as edit, DELETE as remove } from "./messages/[id]/route";
 import type { TrackerCompany, ContactProgress } from "@/lib/tracker";
 
 const state = vi.hoisted(() => ({ store: null as unknown as ReturnType<typeof createTrackerStorage>, fail: false }));
-vi.mock("@/lib/tracker-storage", async importOriginal => {
-  const actual = await importOriginal<typeof import("@/lib/tracker-storage")>();
-  return { ...actual,
-    readTracker: () => state.fail ? Promise.reject(new Error("Private path")) : state.store.readTracker(),
-    updateTracker: (...args: Parameters<typeof actual.updateTracker>) => state.fail ? Promise.reject(new Error("Private path")) : state.store.updateTracker(...args),
-  };
-});
+vi.mock("@/lib/tracker-storage", async importOriginal => ({
+  ...await importOriginal<typeof import("@/lib/tracker-storage")>(),
+  withTrackerStore: (operation: (store: typeof state.store) => unknown) => {
+    if (state.fail) throw new Error("Private path");
+    return operation(state.store);
+  },
+}));
 let directory: string;
+let db: DatabaseSync;
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), "tracker-api-"));
-  state.store = createTrackerStorage(join(directory, "tracker.json"));
+  db = openTrackerDatabase(join(directory, "tracker.sqlite"));
+  state.store = createTrackerStorage(db);
   state.fail = false;
 });
-afterEach(async () => { vi.restoreAllMocks(); await rm(directory, { recursive: true, force: true }); });
+afterEach(async () => { vi.restoreAllMocks(); db.close(); await rm(directory, { recursive: true, force: true }); });
 const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
 const req = (body: unknown, method = "POST") => new Request("http://localhost/api/tracker", { method, body: JSON.stringify(body) });
 const message = (day: number) => ({ text: "Hello", sentAt: `2026-01-${String(day).padStart(2, "0")}T12:00:00Z` });
@@ -49,6 +53,31 @@ async function setup() {
 }
 
 describe("tracker API", () => {
+  it("lists sidebar summaries without full histories, email, or links", async () => {
+    const { companyId, contactId } = await setup();
+    await start(req(message(1)), ctx(contactId));
+    const response = await listCompanies();
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    const body = await response.json();
+    expect(body.companies).toEqual([{ id: companyId, name: fixture.companies[0].name, notes: "",
+      contacts: [{ id: contactId, name: "Alex", status: "awaiting_follow_up_1", isOverdue: true }] }]);
+  });
+
+  it("returns only the requested company's details and rejects missing IDs", async () => {
+    const { companyId, contactId } = await setup();
+    await createCompany(req({ name: "Other company" }));
+    await start(req(message(1)), ctx(contactId));
+    const response = await getCompany(new Request("http://localhost"), ctx(companyId));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.companies).toBeUndefined();
+    expect(body.company.id).toBe(companyId);
+    expect(body.company.contacts[0].sequences[0].messages[0].text).toBe("Hello");
+    expect(body.company.contacts[0].status).toBe("awaiting_follow_up_1");
+    expect((await getCompany(new Request("http://localhost"), ctx("missing"))).status).toBe(404);
+  });
+
   it("returns empty tracker data with a computation timestamp", async () => {
     const response = await GET();
     expect(response.status).toBe(200);
@@ -75,9 +104,9 @@ describe("tracker API", () => {
     expect(current.company.contacts[0]).toMatchObject({ status: "responded", nextFollowUpAt: null, isOverdue: false });
     const fetched = await (await GET()).json();
     expect(fetched.companies[0]).toEqual(current.company);
-    const stored = JSON.parse(await readFile(join(directory, "tracker.json"), "utf8"));
-    expect(stored.companies[0].contacts[0].status).toBeUndefined();
-    expect(stored.computedAt).toBeUndefined();
+    const stored = { companies: state.store.listCompanies() };
+    expect(stored.companies[0].contacts[0]).not.toHaveProperty("status");
+    expect(stored).not.toHaveProperty("computedAt");
   });
 
   it("restarts open outreach and supports manual closure", async () => {
@@ -88,6 +117,43 @@ describe("tracker API", () => {
     expect(sequences[0].closeReason).toBe("restarted");
     const closed = await result(await close(req({ action: "close", at: message(3).sentAt }, "PATCH"), ctx(sequences[1].id)));
     expect(closed.company.contacts[0].status).toBe("manual");
+  });
+
+  it("rolls back a sequence restart when the new message cannot be saved", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { contactId } = await setup();
+    await result(await start(req(message(1)), ctx(contactId)), 201);
+    const before = state.store.listCompanies();
+    db.exec("CREATE TRIGGER reject_message BEFORE INSERT ON messages BEGIN SELECT RAISE(ABORT, 'Disk failure'); END;");
+    expect((await start(req(message(2)), ctx(contactId))).status).toBe(500);
+    expect(state.store.listCompanies()).toEqual(before);
+    expect(db.isTransaction).toBe(false);
+    db.exec("DROP TRIGGER reject_message");
+    await result(await start(req(message(2)), ctx(contactId)), 201);
+    expect(state.store.getContact(contactId)!.sequences).toHaveLength(2);
+  });
+
+  it("keeps sidebar badges consistent with full views after outreach changes", async () => {
+    const { contactId } = await setup();
+    async function check() {
+      const list = await (await listCompanies()).json();
+      const full = await (await GET()).json();
+      const summary = list.companies[0].contacts[0];
+      const detail = full.companies[0].contacts[0];
+      expect(summary).toMatchObject({ id: detail.id, status: detail.status, isOverdue: detail.isOverdue });
+    }
+    await check();
+    const initial = await result(await start(req(message(1)), ctx(contactId)), 201);
+    await check();
+    const id = initial.company.contacts[0].sequences[0].id;
+    await follow(req(message(2)), ctx(id));
+    await check();
+    await follow(req(message(3)), ctx(id));
+    await check();
+    const restart = await result(await start(req(message(4)), ctx(contactId)), 201);
+    await check();
+    await close(req({ action: "record_response", at: message(5).sentAt }), ctx(restart.company.contacts[0].sequences[1].id));
+    await check();
   });
 
   it.each([null, [], {}, { name: "" }, { name: 42 }, { name: "Alex", id: "client-id" }])("rejects invalid creation body %j", async body => {
@@ -129,10 +195,10 @@ describe("tracker API", () => {
     const initial = await result(await start(req(message(1)), ctx(contactId)), 201);
     const sequence = initial.company.contacts[0].sequences[0];
     await result(await follow(req(message(4)), ctx(sequence.id)), 201);
-    const before = await state.store.readTracker();
+    const before = ({ companies: state.store.listCompanies() });
     expect((await follow(req(message(3)), ctx(sequence.id))).status).toBe(409);
     expect((await remove(new Request("http://localhost", { method: "DELETE" }), ctx(sequence.messages[0].id))).status).toBe(409);
-    expect(await state.store.readTracker()).toEqual(before);
+    expect(({ companies: state.store.listCompanies() })).toEqual(before);
     await result(await close(req({ action: "close", at: message(5).sentAt }, "PATCH"), ctx(sequence.id)));
     expect((await follow(req(message(6)), ctx(sequence.id))).status).toBe(409);
   });
@@ -144,7 +210,7 @@ describe("tracker API", () => {
       expect(response.status).toBe(500);
       expect(await response.json()).toEqual({ error: { code: "internal_error", message: "Could not load or save tracker data." } });
     }
-    expect(await state.store.readTracker()).toEqual({ companies: [] });
+    expect(({ companies: state.store.listCompanies() })).toEqual({ companies: [] });
   });
 });
 
@@ -162,6 +228,6 @@ describe("empty inline outreach API", () => {
     await result(await close(req({ action: "record_response", at: message(3).sentAt }, "PATCH"), ctx(sequenceId)));
     current = await result(await close(req({ action: "edit_closure", at: message(4).sentAt }, "PATCH"), ctx(sequenceId)));
     expect(current.company.contacts[0].sequences[0].respondedAt).toBe("2026-01-04T12:00:00.000Z");
-    expect((await state.store.readTracker()).companies[0].contacts[0].sequences[0].messages[0].text).toBe("");
+    expect((({ companies: state.store.listCompanies() })).companies[0].contacts[0].sequences[0].messages[0].text).toBe("");
   });
 });

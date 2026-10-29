@@ -6,6 +6,6 @@ export async function POST(request: Request, context: IdContext) {
   const { id } = await context.params;
   return trackerWrite(request, ["text", "sentAt", "notes"], ["sentAt"], (data, input, now) => {
     const { company, contact } = findContact(data, "contact", id);
-    return replaceContact(company, startSequence(contact, { text: input.text, sentAt: input.sentAt, notes: input.notes }, now));
+    return replaceContact(data, company, contact, startSequence(contact, { text: input.text, sentAt: input.sentAt, notes: input.notes }, now));
   }, 201);
 }

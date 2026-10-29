@@ -6,6 +6,6 @@ export async function PATCH(request: Request, context: IdContext) {
   const { id } = await context.params;
   return trackerWrite(request, ["name", "email", "links"], [], (data, input) => {
     const { company, contact } = findContact(data, "contact", id);
-    return replaceContact(company, updateContact(contact, input));
+    return replaceContact(data, company, contact, updateContact(contact, input));
   }, 200);
 }

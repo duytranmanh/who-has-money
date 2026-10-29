@@ -8,6 +8,7 @@ import type { ContactProgress, TrackerCompany, TrackerContact } from "@/lib/trac
 
 type Contact = TrackerContact & ContactProgress;
 type Company = Omit<TrackerCompany, "contacts"> & { contacts: Contact[] };
+type CompanySummary = Omit<Company, "contacts"> & { contacts: Pick<Contact, "id" | "name" | "status" | "isOverdue">[] };
 const labels: Record<ContactProgress["status"], string> = {
   uncontacted: "Uncontacted", awaiting_follow_up_1: "Awaiting first follow-up",
   awaiting_follow_up_2: "Awaiting second follow-up", responded: "Responded",
@@ -24,7 +25,9 @@ async function request(url: string, options?: RequestInit) {
 
 // Load saved companies, display derived outreach state, and merge only confirmed saves.
 export default function Tracker({ active }: { active: boolean }) {
-  const [companies, setCompanies] = useState<Company[]>([]);
+  const [companies, setCompanies] = useState<CompanySummary[]>([]);
+  const [companyDetails, setCompanyDetails] = useState<Company | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
@@ -58,11 +61,18 @@ export default function Tracker({ active }: { active: boolean }) {
       refreshController.current = controller;
       const version = revision.current;
       try {
-        const data = await request("/api/tracker", { signal: controller.signal });
+        const data = await request("/api/tracker/companies", { signal: controller.signal });
         if (!Array.isArray(data.companies)) throw new Error("Unexpected tracker response.");
         if (disposed || controller.signal.aborted || version !== revision.current) return;
         setCompanies(data.companies);
         loaded.current = true;
+        if (selectedId) {
+          setDetailLoading(true);
+          const details = await request(`/api/tracker/companies/${selectedId}`, { signal: controller.signal });
+          if (disposed || controller.signal.aborted || version !== revision.current) return;
+          if (details.company?.id !== selectedId) throw new Error("Unexpected company response.");
+          setCompanyDetails(details.company);
+        }
         setError("");
         setRefreshError("");
       } catch (cause) {
@@ -72,7 +82,10 @@ export default function Tracker({ active }: { active: boolean }) {
           else setError(message);
         }
       } finally {
-        if (!disposed && !controller.signal.aborted) setLoading(false);
+        if (!disposed && !controller.signal.aborted) {
+          setLoading(false);
+          setDetailLoading(false);
+        }
       }
     }
     // Background refreshes retain mounted forms, even when a refresh fails.
@@ -88,7 +101,7 @@ export default function Tracker({ active }: { active: boolean }) {
       document.removeEventListener("visibilitychange", refresh);
       window.clearInterval(interval);
     };
-  }, [active, attempt]);
+  }, [active, attempt, selectedId]);
 
   async function persist(url: string, method: string, values: Record<string, unknown>) {
     // Invalidate overlapping reads both before and after persistence.
@@ -98,9 +111,12 @@ export default function Tracker({ active }: { active: boolean }) {
     try {
       const data = await request(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(values) });
       if (!data.company?.id) throw new Error("Unexpected save response. Reload before retrying.");
+      const summary: CompanySummary = { id: data.company.id, name: data.company.name, notes: data.company.notes,
+        contacts: data.company.contacts.map((person: Contact) => ({ id: person.id, name: person.name, status: person.status, isOverdue: person.isOverdue })) };
       setCompanies(current => current.some(company => company.id === data.companyId)
-        ? current.map(company => company.id === data.companyId ? data.company : company)
-        : [...current, data.company]);
+        ? current.map(company => company.id === data.companyId ? summary : company)
+        : [...current, summary]);
+      setCompanyDetails(data.company);
       if (method === "POST" && url === "/api/tracker/companies") setSelectedId(data.company.id);
       setNotice("Changes saved.");
       if (method === "POST" && url === `/api/tracker/companies/${data.company.id}/contacts`) {
@@ -169,7 +185,7 @@ export default function Tracker({ active }: { active: boolean }) {
     });
   }
 
-  const selected = companies.find(company => company.id === selectedId);
+  const selected = companyDetails?.id === selectedId ? companyDetails : undefined;
   const contacts = selected ? sortedContacts(selected) : [];
   const contact = contacts.find(person => person.id === contactId);
   const outreachCount = contacts.reduce((count, person) => count + person.sequences.length, 0);
@@ -186,9 +202,9 @@ export default function Tracker({ active }: { active: boolean }) {
         <input id="tracker-search" type="search" disabled={inlineCount > 0} placeholder="Search targets or contacts…" value={query} onChange={event => setQuery(event.target.value)} /></div>
       <div className="application-list">
         {loading ? <p role="status">Loading tracker…</p> : error ? <div role="alert"><p>{error}</p><button onClick={() => setAttempt(value => value + 1)}>Retry</button></div> : <>
-          {visible.map(company => <button key={company.id} className={`application-row ${selected?.id === company.id ? "is-selected" : ""}`}
-            disabled={navigationLocked} aria-pressed={selected?.id === company.id} onClick={() => { setSelectedId(company.id); setContactId(null); setContactError(""); setNotice(""); }}>
-            <strong>{selected?.id === company.id && <span className="selection-marker">▸ </span>}{company.name}</strong>
+          {visible.map(company => <button key={company.id} className={`application-row ${selectedId === company.id ? "is-selected" : ""}`}
+            disabled={navigationLocked} aria-pressed={selectedId === company.id} onClick={() => { setSelectedId(company.id); setContactId(null); setContactError(""); setNotice(""); }}>
+            <strong>{selectedId === company.id && <span className="selection-marker">▸ </span>}{company.name}</strong>
             <span className={company.contacts.some(person => person.status === "responded") ? "workspace-badge" : "application-meta"}>
               {company.contacts.some(person => person.status === "responded") ? "Responded" : company.contacts.some(person => person.isOverdue) ? "Follow-up due" : `${company.contacts.length} contacts`}</span>
           </button>)}
@@ -210,7 +226,7 @@ export default function Tracker({ active }: { active: boolean }) {
         </header>
         <section className="company-intel" aria-labelledby="intel-title"><div className="workspace-strip"><strong id="intel-title">📝 NOTES &amp; INTEL</strong><span>Company research &amp; preparation</span></div>
           <div className="intel-body"><InlineField key={selected.id} label="company notes" value={selected.notes} multiline disabled={detailsLocked} placeholder="Add company research, notes, and interview preparation…" onSave={notes => save(`/api/tracker/companies/${selected.id}`, "PATCH", { notes })} /></div></section>
-      </> : <p className="workspace-empty">Select or create a company to open its workspace.</p>}
+      </> : <p className="workspace-empty">{detailLoading ? "Loading company…" : "Select or create a company to open its workspace."}</p>}
     </section>
 
     <section className="window tracker-panel contacts-panel" aria-labelledby="contacts-window-title">

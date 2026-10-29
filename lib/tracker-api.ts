@@ -94,6 +94,17 @@ export async function trackerCompanyRead(id: string): Promise<Response> {
   } catch (error) { return errorResponse(error); }
 }
 
+// Delete the whole company tree atomically; no company remains to return.
+export async function trackerCompanyDelete(id: string): Promise<Response> {
+  try {
+    return withTrackerStore(store => store.transaction(() => {
+      findCompany(store, id);
+      store.deleteCompany(id);
+      return Response.json({ companyId: id, company: null, computedAt: new Date().toISOString() }, { headers });
+    }));
+  } catch (error) { return errorResponse(error); }
+}
+
 export function findCompany(store: TrackerStore, id: string): TrackerCompany {
   const company = store.getCompany(id);
   if (!company) throw new TrackerError("not_found", "Company not found.");

@@ -4,6 +4,7 @@ import { formatDateTime } from "@/lib/date-time";
 import { useEffect, useRef, useState } from "react";
 import InlineField, { InlineBusyContext, InlineEditingContext } from "./tracker-inline-field";
 import ContactOutreach from "./tracker-outreach";
+import ConfirmDeleteButton from "./confirm-delete-button";
 import type { ContactProgress, TrackerCompany, TrackerContact } from "@/lib/tracker";
 
 type Contact = TrackerContact & ContactProgress;
@@ -42,6 +43,9 @@ export default function Tracker({ active }: { active: boolean }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [contactId, setContactId] = useState<string | null>(null);
   const [outreachBusy, setOutreachBusy] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const deletingRef = useRef(false);
+  const [deleteError, setDeleteError] = useState("");
   const [query, setQuery] = useState("");
   const [notice, setNotice] = useState("");
   const addButton = useRef<HTMLButtonElement>(null);
@@ -110,6 +114,14 @@ export default function Tracker({ active }: { active: boolean }) {
     refreshController.current?.abort();
     try {
       const data = await request(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(values) });
+      if (method === "DELETE" && url === `/api/tracker/companies/${data.companyId}` && data.company === null) {
+        setCompanies(current => current.filter(company => company.id !== data.companyId));
+        setCompanyDetails(null);
+        setSelectedId(null);
+        setContactId(null);
+        setNotice("Company deleted.");
+        return;
+      }
       if (!data.company?.id) throw new Error("Unexpected save response. Reload before retrying.");
       const summary: CompanySummary = { id: data.company.id, name: data.company.name, notes: data.company.notes,
         contacts: data.company.contacts.map((person: Contact) => ({ id: person.id, name: person.name, status: person.status, isOverdue: person.isOverdue })) };
@@ -171,7 +183,25 @@ export default function Tracker({ active }: { active: boolean }) {
     }
   }
 
-  const detailsLocked = creatingCompany || creatingContact || outreachBusy;
+  async function deleteRecord(kind: "company" | "contact", id: string) {
+    if (deletingRef.current) return;
+    deletingRef.current = true;
+    setDeleting(true);
+    setDeleteError("");
+    setNotice("");
+    try {
+      await save(`/api/tracker/${kind === "company" ? "companies" : "contacts"}/${id}`, "DELETE", {});
+      setContactId(null);
+      setNotice(kind === "company" ? "Company deleted." : "Contact deleted.");
+    } catch (cause) {
+      setDeleteError(cause instanceof Error ? cause.message : `Could not delete ${kind}.`);
+    } finally {
+      deletingRef.current = false;
+      setDeleting(false);
+    }
+  }
+
+  const detailsLocked = creatingCompany || creatingContact || outreachBusy || deleting;
   const navigationLocked = detailsLocked || inlineCount > 0;
 
   const contactCount = companies.reduce((count, company) => count + company.contacts.length, 0);
@@ -189,7 +219,9 @@ export default function Tracker({ active }: { active: boolean }) {
   const contacts = selected ? sortedContacts(selected) : [];
   const contact = contacts.find(person => person.id === contactId);
   const outreachCount = contacts.reduce((count, person) => count + person.sequences.length, 0);
-  const links = [...new Set(contacts.flatMap(person => person.links))];
+  const links = [...new Set((selected?.notes.match(/https?:\/\/[^\s<>"']+/gi) ?? [])
+    .map(link => link.replace(/[.,;:!?\])}]+$/, ""))
+    .filter(link => URL.canParse(link)))];
   const visible = companies.filter(company => `${company.name} ${company.notes} ${company.contacts.map(person => person.name).join(" ")}`.toLowerCase().includes(query.trim().toLowerCase()));
 
   return <InlineEditingContext.Provider value={setInlineCount}><InlineBusyContext.Provider value={inlineCount > 0}><main className="tracker-desktop">
@@ -219,10 +251,14 @@ export default function Tracker({ active }: { active: boolean }) {
       <div className="title-bar workspace-title"><div className="title-bar-text">💼 {selected ? `${selected.name} — Company Workspace` : "Company Workspace"}</div></div>
       {refreshError && <div role="alert" className="workspace-alert"><p>Could not refresh: {refreshError} Showing previously loaded data.</p><button onClick={() => setAttempt(value => value + 1)}>Retry refresh</button></div>}
       <div role="status" className={notice ? "workspace-notice" : "sr-only"}>{notice}</div>
+      {deleteError && <p role="alert" className="workspace-alert">{deleteError}</p>}
       {selected ? <>
-        <header className="company-heading"><div className="company-heading-row"><h1><InlineField key={selected.id} label="company name" value={selected.name} required disabled={detailsLocked} onSave={name => save(`/api/tracker/companies/${selected.id}`, "PATCH", { name })} /></h1></div>
-          <div className="company-links"><strong>LINKS:</strong>{links.filter(link => /^https?:\/\//i.test(link)).map(link => <a key={link} href={link} target="_blank" rel="noopener noreferrer">{link.replace(/^https?:\/\//i, "").replace(/\/$/, "")} ↗</a>)}
-            {!links.length && <span>Add links through a contact.</span>}</div>
+        <header className="company-heading"><div className="company-heading-row"><h1><InlineField key={selected.id} label="company name" value={selected.name} required disabled={detailsLocked} onSave={name => save(`/api/tracker/companies/${selected.id}`, "PATCH", { name })} /></h1>
+          <ConfirmDeleteButton label="Delete company" disabled={navigationLocked}
+            message={`Delete company "${selected.name}" and all its contacts and outreach history? This cannot be undone.`}
+            onConfirm={() => { void deleteRecord("company", selected.id); }} /></div>
+          <div className="company-links"><strong>LINKS:</strong>{links.map(link => <a key={link} href={link} target="_blank" rel="noopener noreferrer">{link.replace(/^https?:\/\//i, "").replace(/\/$/, "")} ↗</a>)}
+            {!links.length && <span>Add URLs to company notes to show links here.</span>}</div>
         </header>
         <section className="company-intel" aria-labelledby="intel-title"><div className="workspace-strip"><strong id="intel-title">📝 NOTES &amp; INTEL</strong><span>Company research &amp; preparation</span></div>
           <div className="intel-body"><InlineField key={selected.id} label="company notes" value={selected.notes} multiline disabled={detailsLocked} placeholder="Add company research, notes, and interview preparation…" onSave={notes => save(`/api/tracker/companies/${selected.id}`, "PATCH", { notes })} /></div></section>
@@ -254,7 +290,10 @@ export default function Tracker({ active }: { active: boolean }) {
       {selected && <div className="inspector-body">
         {contact ? <>
           <section className="inspector-card" key={contact.id}>
-            <h2>CONTACT DETAILS</h2>
+            <div className="tracker-card-heading"><h2>CONTACT DETAILS</h2>
+            <ConfirmDeleteButton label="Delete contact" disabled={navigationLocked}
+              message={`Delete contact "${contact.name}" and all its outreach history? This cannot be undone.`}
+              onConfirm={() => { void deleteRecord("contact", contact.id); }} /></div>
             <article className="inspector-contact">
               <InlineField label="contact name" value={contact.name} required disabled={detailsLocked} onSave={name => save(`/api/tracker/contacts/${contact.id}`, "PATCH", { name })} />
               <InlineField label="contact email" value={contact.email} type="email" disabled={detailsLocked} placeholder="Add email…" onSave={email => save(`/api/tracker/contacts/${contact.id}`, "PATCH", { email })} />
@@ -265,7 +304,7 @@ export default function Tracker({ active }: { active: boolean }) {
             </article>
           </section>
           <section className="inspector-card">
-            <ContactOutreach key={contact.id} contact={contact} disabled={creatingCompany || creatingContact} onSave={save}
+            <ContactOutreach key={contact.id} contact={contact} disabled={creatingCompany || creatingContact || deleting} onSave={save}
               onBusyChange={setOutreachBusy} />
           </section>
         </> : <section className="inspector-card"><h2>{selected.name} · OVERVIEW</h2>

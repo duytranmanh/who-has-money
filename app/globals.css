@@ -44,6 +44,19 @@ a { color: #0645ad; }
 .tracker-editor .control { margin-bottom: 12px; }
 .tracker-editor textarea { width: 100%; font: inherit; padding: 6px; resize: vertical; }
 .tracker-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.delete-confirmation { width: min(420px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); margin: auto; border: 0; color: #222; }
+.delete-confirmation::backdrop { background: rgb(0 0 0 / 30%); }
+.delete-confirmation .window-body { margin: 0; padding: 20px 16px 16px; }
+.delete-confirmation-message { display: flex; align-items: flex-start; gap: 16px; }
+.delete-confirmation-message p { margin: 0; line-height: 1.5; overflow-wrap: anywhere; }
+.delete-confirmation-icon { flex-shrink: 0; display: grid; place-items: center; width: 32px; height: 32px; border: 2px solid #7f6000; border-radius: 50%; background: #ffda44; color: #222; font: bold 26px Georgia, serif; box-shadow: 1px 1px 0 #fff inset, 1px 1px 2px #888; }
+.delete-confirmation-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px; }
+button.delete-button { color: #fff; background: linear-gradient(#d85b50, #a9251b); border: 1px solid #7f1d16; box-shadow: inset 1px 1px 0 #ed9b92, inset -1px -1px 0 #821b14; text-shadow: none; }
+button.delete-button:not(:disabled):hover { background: linear-gradient(#e66a5e, #bb3024); box-shadow: inset 1px 1px 0 #ffc0b5, inset -1px -1px 0 #821b14; }
+button.delete-button:not(:disabled):active { background: linear-gradient(#922017, #bd3a2e); box-shadow: inset 1px 1px 2px #6f1812; }
+button.delete-button:disabled { color: #795e5b; background: #dcc9c6; border-color: #ad9591; box-shadow: none; text-shadow: none; }
+button.delete-icon-button { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; width: 28px; height: 28px; padding: 4px; color: #a9251b; }
+button.delete-icon-button:disabled { color: #ad9591; }
 .tracker-companies { list-style: none; padding: 0; }
 .tracker-companies li { padding: 16px 0; border-bottom: 1px solid #aaa; }
 .tracker-companies summary { cursor: pointer; font-size: 15px; }
@@ -94,7 +107,7 @@ body { background: #4a7596; }
 .company-links a { background: white; border: 1px solid #7f9db9; padding: 2px 4px; font-family: monospace; overflow-wrap: anywhere; }
 .company-intel { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .company-intel .workspace-strip, .touchpoint-history .workspace-strip { font-size: 10px; }
-.intel-body { flex: 1; min-height: 0; background: white; padding: 14px 12px; overflow: auto; }
+.intel-body { flex: 1; min-height: 0; display: flex; background: white; padding: 14px 12px; overflow: auto; }
 .intel-body .tracker-notes { margin: 0; font: 12px/1.65 monospace; }
 .touchpoint-history { flex: 2; display: flex; flex-direction: column; min-height: 220px; border-top: 1px solid #b5b2a5; }
 .logged-count { display: inline-block; border: 1px solid #7f9db9; background: white; color: #667080; margin-left: 6px; padding: 1px 4px; font: 10px monospace; }
@@ -111,6 +124,8 @@ body { background: #4a7596; }
 .inspector-body { padding: 8px; overflow: auto; }
 .inspector-card { background: white; border: 1px solid #7f9db9; padding: 9px; margin-bottom: 8px; }
 .inspector-card h2 { margin: 0; font-size: 10px; color: #6b7280; }
+.tracker-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.tracker-card-heading > .delete-icon-button { flex-shrink: 0; }
 .contacts-heading { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #eef0f3; padding-bottom: 6px; }
 .inspector-contact { padding: 9px 0; border-bottom: 1px solid #eef0f3; }
 .inspector-contact:last-child { border-bottom: 0; padding-bottom: 0; }
@@ -158,7 +173,9 @@ body { background: #4a7596; }
 .inline-field input, .inline-field textarea { width: 100%; padding: 4px; font: inherit; color: inherit; }
 .inline-field textarea { min-height: 65px; resize: vertical; line-height: 1.65; }
 .inline-multiline { white-space: pre-wrap; }
-.intel-body .inline-field { font: 12px/1.65 monospace; }
+.intel-body .inline-field { flex: 1; display: flex; flex-direction: column; min-height: 100px; margin: 0; font: 12px/1.65 monospace; }
+.intel-body .inline-display { flex: 1; display: flex; align-items: flex-start; justify-content: flex-start; text-align: left; }
+.intel-body textarea { flex: 1 1 0; resize: none; }
 .company-heading h1 { flex: 1; min-width: 0; }
 .inline-status { display: block; color: #007d5b; font: 10px Tahoma, sans-serif; margin: 3px; }
 .inline-error { display: block; color: #a02020; font: 11px/1.5 Tahoma, sans-serif; margin: 4px; }

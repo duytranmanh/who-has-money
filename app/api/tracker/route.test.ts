@@ -8,9 +8,9 @@ import { createTrackerStorage } from "@/lib/tracker-storage";
 import type { DatabaseSync } from "node:sqlite";
 import { GET } from "./route";
 import { POST as createCompany, GET as listCompanies } from "./companies/route";
-import { PATCH as editCompany, GET as getCompany } from "./companies/[id]/route";
+import { PATCH as editCompany, GET as getCompany, DELETE as deleteCompany } from "./companies/[id]/route";
 import { POST as createContact } from "./companies/[id]/contacts/route";
-import { PATCH as editContact } from "./contacts/[id]/route";
+import { PATCH as editContact, DELETE as deleteContact } from "./contacts/[id]/route";
 import { POST as start } from "./contacts/[id]/sequences/route";
 import { POST as follow } from "./sequences/[id]/follow-ups/route";
 import { PATCH as close } from "./sequences/[id]/route";
@@ -53,6 +53,48 @@ async function setup() {
 }
 
 describe("tracker API", () => {
+  it("deletes a contact's history while preserving its company and other contacts", async () => {
+    const { companyId, contactId } = await setup();
+    await start(req(message(1)), ctx(contactId));
+    const other = await result(await createContact(req({ name: "Keep me" }), ctx(companyId)), 201);
+    const remaining = await result(await deleteContact(req({}, "DELETE"), ctx(contactId)));
+    expect(remaining.company.contacts).toEqual([other.company.contacts[1]]);
+    expect(state.store.getContact(contactId)).toBeUndefined();
+    expect(db.prepare("SELECT COUNT(*) AS count FROM sequences").get()!.count).toBe(0);
+    expect(db.prepare("SELECT COUNT(*) AS count FROM messages").get()!.count).toBe(0);
+    expect((await deleteContact(req({}, "DELETE"), ctx(contactId))).status).toBe(404);
+  });
+
+  it("deletes a company's whole tree while preserving other companies", async () => {
+    const { companyId, contactId } = await setup();
+    await start(req(message(1)), ctx(contactId));
+    const other = await result(await createCompany(req({ name: "Keep me" })), 201);
+    const response = await deleteCompany(req({}, "DELETE"), ctx(companyId));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(await response.json()).toMatchObject({ companyId, company: null, computedAt: expect.any(String) });
+    expect(state.store.listCompanies()).toEqual([other.company]);
+    for (const table of ["contacts", "sequences", "messages"]) {
+      expect(db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get()!.count).toBe(0);
+    }
+    expect((await deleteCompany(req({}, "DELETE"), ctx(companyId))).status).toBe(404);
+  });
+
+  it.each(["company", "contact"])("rolls back failed %s deletion including its history", async kind => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { companyId, contactId } = await setup();
+    await start(req(message(1)), ctx(contactId));
+    const before = state.store.listCompanies();
+    const table = kind === "company" ? "companies" : "contacts";
+    db.exec(`CREATE TRIGGER reject_delete BEFORE DELETE ON ${table} BEGIN SELECT RAISE(ABORT, 'Disk failure'); END;`);
+    const response = kind === "company"
+      ? await deleteCompany(req({}, "DELETE"), ctx(companyId))
+      : await deleteContact(req({}, "DELETE"), ctx(contactId));
+    expect(response.status).toBe(500);
+    expect(state.store.listCompanies()).toEqual(before);
+    expect(db.isTransaction).toBe(false);
+  });
+
   it("lists sidebar summaries without full histories, email, or links", async () => {
     const { companyId, contactId } = await setup();
     await start(req(message(1)), ctx(contactId));

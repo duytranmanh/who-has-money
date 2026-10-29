@@ -4,6 +4,7 @@ import { formatDateTime } from "@/lib/date-time";
 import InlineField, { InlineBusyContext } from "./tracker-inline-field";
 import { useContext, useRef, useState } from "react";
 import type { TrackerContact } from "@/lib/tracker";
+import ConfirmDeleteButton from "./confirm-delete-button";
 
 type Save = (url: string, method: string, values: Record<string, unknown>) => Promise<void>;
 const kinds = { initial: "Initial outreach", follow_up_1: "First follow-up", follow_up_2: "Second follow-up" };
@@ -61,17 +62,18 @@ export default function ContactOutreach({ contact, disabled, onSave, onBusyChang
           onSave={value => onSave(`/api/tracker/sequences/${sequence.id}`, "PATCH", { action: "edit_closure", at: value === localTimestamp(sequence.closedAt!) ? sequence.closedAt : new Date(value).toISOString() })} />}
         {sequence.closedAt && sequence.closeReason !== "responded" && sequence.closeReason !== "manual" && <p>Closed: <time dateTime={sequence.closedAt}>{formatDateTime(sequence.closedAt)}</time></p>}
         <ol className="outreach-cards">{sequence.messages.map((message, index) => <li className="outreach-message" key={message.id}>
-          <strong>{kinds[message.kind]}</strong>
+          <div className="tracker-card-heading"><strong>{kinds[message.kind]}</strong>
+            <ConfirmDeleteButton label="Delete message" disabled={locked || index !== sequence.messages.length - 1}
+              title={index !== sequence.messages.length - 1 ? "Delete later messages first" : undefined}
+              message={`Delete this ${kinds[message.kind].toLowerCase()} message and its notes? This cannot be undone.`}
+              onConfirm={() => { void act(`/api/tracker/messages/${message.id}`, "DELETE", {}); }} />
+          </div>
           <InlineField label="message text" value={message.text} multiline disabled={locked} placeholder="Add message text…"
             onSave={text => onSave(`/api/tracker/messages/${message.id}`, "PATCH", { text })} />
           <InlineField label="message sent at (local time)" value={localTimestamp(message.sentAt)} type="datetime-local" required disabled={locked}
             onSave={value => onSave(`/api/tracker/messages/${message.id}`, "PATCH", { sentAt: value === localTimestamp(message.sentAt) ? message.sentAt : new Date(value).toISOString() })} />
           <InlineField label="message notes" value={message.notes} multiline disabled={locked} placeholder="Add notes…"
             onSave={notes => onSave(`/api/tracker/messages/${message.id}`, "PATCH", { notes })} />
-          <div className="tracker-actions">
-            <button disabled={locked || index !== sequence.messages.length - 1} title={index !== sequence.messages.length - 1 ? "Delete later messages first" : undefined}
-              onClick={() => act(`/api/tracker/messages/${message.id}`, "DELETE", {})}>Delete message</button>
-          </div>
         </li>)}</ol>
         {canClose && <div className="tracker-actions">
           <button disabled={locked} onClick={() => act(`/api/tracker/sequences/${sequence.id}/follow-ups`, "POST", { text: "", sentAt: new Date().toISOString() })}>+ Follow-up</button>

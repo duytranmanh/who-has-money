@@ -44,3 +44,7 @@ next-env.d.ts
 # local tracker data and temporary saves
 /data/tracker.json
 /data/tracker.json.*.tmp
+/data/tracker.sqlite
+/data/tracker.sqlite-journal
+/data/tracker.sqlite-wal
+/data/tracker.sqlite-shm

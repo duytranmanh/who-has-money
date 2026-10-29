@@ -219,7 +219,9 @@ export default function Tracker({ active }: { active: boolean }) {
   const contacts = selected ? sortedContacts(selected) : [];
   const contact = contacts.find(person => person.id === contactId);
   const outreachCount = contacts.reduce((count, person) => count + person.sequences.length, 0);
-  const links = [...new Set(contacts.flatMap(person => person.links))];
+  const links = [...new Set((selected?.notes.match(/https?:\/\/[^\s<>"']+/gi) ?? [])
+    .map(link => link.replace(/[.,;:!?\])}]+$/, ""))
+    .filter(link => URL.canParse(link)))];
   const visible = companies.filter(company => `${company.name} ${company.notes} ${company.contacts.map(person => person.name).join(" ")}`.toLowerCase().includes(query.trim().toLowerCase()));
 
   return <InlineEditingContext.Provider value={setInlineCount}><InlineBusyContext.Provider value={inlineCount > 0}><main className="tracker-desktop">
@@ -255,8 +257,8 @@ export default function Tracker({ active }: { active: boolean }) {
           <ConfirmDeleteButton label="Delete company" disabled={navigationLocked}
             message={`Delete company "${selected.name}" and all its contacts and outreach history? This cannot be undone.`}
             onConfirm={() => { void deleteRecord("company", selected.id); }} /></div>
-          <div className="company-links"><strong>LINKS:</strong>{links.filter(link => /^https?:\/\//i.test(link)).map(link => <a key={link} href={link} target="_blank" rel="noopener noreferrer">{link.replace(/^https?:\/\//i, "").replace(/\/$/, "")} ↗</a>)}
-            {!links.length && <span>Add links through a contact.</span>}</div>
+          <div className="company-links"><strong>LINKS:</strong>{links.map(link => <a key={link} href={link} target="_blank" rel="noopener noreferrer">{link.replace(/^https?:\/\//i, "").replace(/\/$/, "")} ↗</a>)}
+            {!links.length && <span>Add URLs to company notes to show links here.</span>}</div>
         </header>
         <section className="company-intel" aria-labelledby="intel-title"><div className="workspace-strip"><strong id="intel-title">📝 NOTES &amp; INTEL</strong><span>Company research &amp; preparation</span></div>
           <div className="intel-body"><InlineField key={selected.id} label="company notes" value={selected.notes} multiline disabled={detailsLocked} placeholder="Add company research, notes, and interview preparation…" onSave={notes => save(`/api/tracker/companies/${selected.id}`, "PATCH", { notes })} /></div></section>

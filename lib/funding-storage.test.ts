@@ -38,7 +38,7 @@ it("archives days and selects the newest complete snapshot without resetting req
   expect(store.readState()).toEqual({ ...state, latestCompleteSnapshot: "snapshots/2026-11-02.json" });
   expect(store.readLatestSnapshot()).toEqual(snapshot("02"));
   expect(fs.readdirSync(join(directory, "snapshots"))).toHaveLength(3);
-  expect(() => store.saveSnapshot(snapshot("02"))).toThrow("already exists");
+  expect(() => store.saveSnapshot({ ...snapshot("02"), companies: [] })).toThrow("already exists");
 });
 
 it("does not move the pointer backward when archiving an older day", () => {

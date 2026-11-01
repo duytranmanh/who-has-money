@@ -1,21 +1,9 @@
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 
-export type FundingCompany = Record<string, unknown> & { slug: string; name: string };
-export type FundingSnapshot = {
-  fetchedAt: string;
-  windowStart: string;
-  windowEnd: string;
-  coverage: "complete" | "partial";
-  companies: FundingCompany[];
-};
-export type FundingState = {
-  budgetDate: string;
-  callsAttempted: number;
-  nextAllowedAttemptAt: string | null;
-  latestCompleteSnapshot: string | null;
-};
+import type { FundingSnapshot, FundingState } from "./funding";
+export type { FundingCompany, FundingSnapshot, FundingState } from "./funding";
 
 function validDate(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(value) &&
@@ -38,6 +26,7 @@ function validateSnapshot(value: FundingSnapshot): void {
 function validateState(value: FundingState): void {
   if (!value || typeof value.budgetDate !== "string" || !validDate(value.budgetDate) ||
       !Number.isSafeInteger(value.callsAttempted) || value.callsAttempted < 0 ||
+      !(value.transientFailures === undefined || (Number.isSafeInteger(value.transientFailures) && value.transientFailures >= 0)) ||
       !(value.nextAllowedAttemptAt === null || timestamp(value.nextAllowedAttemptAt)) ||
       !(value.latestCompleteSnapshot === null || (typeof value.latestCompleteSnapshot === "string" &&
         /^snapshots\/\d{4}-\d{2}-\d{2}\.json$/.test(value.latestCompleteSnapshot) &&
@@ -70,6 +59,20 @@ function atomicWrite(path: string, value: unknown): void {
 export function createFundingStorage(directory = resolve("data/recent-funding")) {
   const statePath = join(directory, "state.json");
 
+  // Exclusive file creation coordinates collectors across processes. After a crash,
+  // remove collector.lock manually only after confirming no collector is running.
+  function acquireLock(): (() => void) | null {
+    mkdirSync(directory, { recursive: true });
+    const path = join(directory, "collector.lock");
+    let fd: number;
+    try { fd = openSync(path, "wx"); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") return null;
+      throw error;
+    }
+    return () => { closeSync(fd); rmSync(path); };
+  }
+
   function readState(): FundingState | null {
     const state = readJson<FundingState>(statePath);
     if (state !== null) validateState(state);
@@ -98,7 +101,8 @@ export function createFundingStorage(directory = resolve("data/recent-funding"))
     const date = new Date(snapshot.fetchedAt).toISOString().slice(0, 10);
     const path = `snapshots/${date}${snapshot.coverage === "partial" ? ".partial" : ""}.json`;
     const state = readState();
-    if (snapshot.coverage === "complete" && readJson(join(directory, path)) !== null) {
+    const existing = readJson<FundingSnapshot>(join(directory, path));
+    if (snapshot.coverage === "complete" && existing !== null && JSON.stringify(existing) !== JSON.stringify(snapshot)) {
       throw new Error("A complete funding snapshot already exists for this UTC day.");
     }
     atomicWrite(join(directory, path), snapshot);
@@ -112,5 +116,16 @@ export function createFundingStorage(directory = resolve("data/recent-funding"))
     return path;
   }
 
-  return { readState, saveState, readLatestSnapshot, saveSnapshot };
+  // Allows recovery when an archive was saved but publishing its pointer failed.
+  function readCompleteSnapshot(date: string): FundingSnapshot | null {
+    if (!validDate(date)) throw new Error("Invalid funding snapshot date.");
+    const snapshot = readJson<FundingSnapshot>(join(directory, `snapshots/${date}.json`));
+    if (snapshot) {
+      validateSnapshot(snapshot);
+      if (snapshot.coverage !== "complete") throw new Error("Funding snapshot is incomplete.");
+    }
+    return snapshot;
+  }
+
+  return { readState, saveState, readLatestSnapshot, saveSnapshot, acquireLock, readCompleteSnapshot };
 }

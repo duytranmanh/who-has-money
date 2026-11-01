@@ -46,6 +46,20 @@ flowchart LR
     Page -->|Save for outreach| Tracker[Tracker]
 ```
 
+## Implementation layers
+
+| File | Responsibility |
+| --- | --- |
+| `lib/funding.ts` | Types, UTC window, company selection, and page validation. No file or network access. |
+| `lib/funding-collector.ts` | Orchestrates guards, requests, pagination, and saves through `collectFunding()`. |
+| `lib/funding-storage.ts` | JSON persistence and exclusive collector lock. |
+
+Matches the tracker's logic/storage separation; HTTP helpers and button integration come later. Collector and tracker remain independent.
+
+Transient errors permit one later retry after 15 minutes; no automatic timer. Other HTTP errors block until the next UTC day; 429 honors retry/reset headers. All attempts share the eight-call cap.
+
+The file lock spans collection and releases on normal/error exits. After a process crash, remove `data/recent-funding/collector.lock` only after confirming no collector is running.
+
 ## Alternatives considered
 
 Target: funding announced 14–21 days ago; optionally show only the newest available day.

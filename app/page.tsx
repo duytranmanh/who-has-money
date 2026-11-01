@@ -197,12 +197,12 @@ function Discovery() {
 export default function Home() {
   const [tab, setTab] = useState<"discovery" | "tracker">("discovery");
   const [trackerVisited, setTrackerVisited] = useState(false);
-  return <>
+  return <div className="app-shell">
     <nav className="app-navigation" aria-label="Application sections">
       <button aria-pressed={tab === "discovery"} onClick={() => setTab("discovery")}>Discovery</button>
       <button aria-pressed={tab === "tracker"} onClick={() => { setTrackerVisited(true); setTab("tracker"); }}>✦ Tracker Workspace <span className="navigation-live">LIVE</span></button>
     </nav>
-    <div hidden={tab !== "discovery"}><Discovery /></div>
+    <div className="discovery-panel" hidden={tab !== "discovery"}><Discovery /></div>
     {trackerVisited && <div hidden={tab !== "tracker"}><Tracker active={tab === "tracker"} /></div>}
-  </>;
+  </div>;
 }

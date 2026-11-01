@@ -1,8 +1,14 @@
 * { box-sizing: border-box; }
 body { margin: 0; background: #3a6ea5; color: #222; font-family: Tahoma, Arial, sans-serif; font-size: 13px; }
-.desktop { min-height: 100vh; padding: 48px 20px; }
-.companies-window { max-width: 1040px; margin: 0 auto; }
-.companies-window .window-body { margin: 0; padding: 24px; }
+.app-shell { height: 100dvh; display: flex; flex-direction: column; }
+.app-shell > .app-navigation { flex-shrink: 0; }
+.discovery-panel { flex: 1; min-height: 0; }
+.desktop { height: 100%; padding: 48px 20px; }
+.companies-window { display: flex; flex-direction: column; height: 100%; max-width: 1040px; margin: 0 auto; }
+.companies-window > .title-bar, .companies-window > .status-bar { flex-shrink: 0; }
+.companies-window .window-body { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: auto; margin: 0; padding: 24px; }
+.companies-window .window-body > * { flex-shrink: 0; }
+.companies-window .table-scroll { flex: 1 1 auto; min-height: 120px; overflow: auto; }
 h1 { font-size: 24px; margin: 0 0 8px; }
 .intro p { margin: 0; color: #555; line-height: 1.5; }
 .toolbar { display: flex; gap: 16px; align-items: end; margin: 24px 0 18px; }
@@ -14,7 +20,7 @@ h1 { font-size: 24px; margin: 0 0 8px; }
 .table-scroll { overflow-x: auto; border: 1px solid #aaa; background: white; }
 .companies-window table { width: 100%; border-collapse: collapse; font: inherit; white-space: nowrap; }
 .companies-window th, .companies-window td { padding: 12px; text-align: left; border-bottom: 1px solid #e4e4e4; }
-.companies-window thead th { background: #f2f1e9; font-weight: normal; }
+.companies-window thead th { position: sticky; top: 0; background: #f2f1e9; font-weight: normal; }
 .companies-window tbody th { white-space: normal; min-width: 180px; }
 .companies-window tbody tr:last-child > * { border-bottom: 0; }
 .companies-window tbody tr:hover { background: #eef4ff; }

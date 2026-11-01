@@ -1,7 +1,7 @@
 "use client";
 
 import { formatDateTime } from "@/lib/date-time";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Tracker from "./tracker";
 
 type Company = {
@@ -12,6 +12,7 @@ type Company = {
   date: number | null;
   website: string | null;
 };
+type SnapshotInfo = { fetchedAt: string; windowStart: string; windowEnd: string; coverage: "complete" };
 type Sort = "date" | "amount" | "name";
 
 // Accept only web links from upstream data before rendering clickable URLs.
@@ -50,14 +51,16 @@ const money = new Intl.NumberFormat("en-US", {
   style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 1,
 });
 
-// Browse the current API batch; search and sorting never imply full-dataset coverage.
+// Browse the latest complete saved funding window; refreshes are explicitly user initiated.
 function Discovery() {
-  // 1. Load and normalize the batch through the server-side API proxy.
+  // 1. Read and normalize the saved snapshot through the server.
   // 2. Filter and sort locally, keeping unavailable values last.
   // 3. Render the table and accessible request status.
   const [companies, setCompanies] = useState<Company[]>([]);
   const [notice, setNotice] = useState("");
-  const [excluded, setExcluded] = useState(0);
+  const [snapshot, setSnapshot] = useState<SnapshotInfo | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshInFlight = useRef(false);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<Sort>("date");
   const [loading, setLoading] = useState(true);
@@ -79,8 +82,7 @@ function Discovery() {
         const rows = data.companies.map(parseCompany);
         if (controller.signal.aborted) return;
         setCompanies(rows);
-        setExcluded(typeof data.filtering?.excluded === "number" ? data.filtering.excluded : 0);
-        setNotice(typeof data.access?.notice === "string" ? data.access.notice : "");
+        setSnapshot(data.snapshot ?? null);
       } catch (cause) {
         if (!controller.signal.aborted) {
           setError(cause instanceof Error ? cause.message : "Could not load companies.");
@@ -92,6 +94,27 @@ function Discovery() {
     void load();
     return () => controller.abort();
   }, [attempt]);
+
+  // Keep displayed data while collection runs; reload only the selected complete snapshot afterward.
+  async function refresh() {
+    if (refreshInFlight.current) return;
+    refreshInFlight.current = true;
+    setRefreshing(true);
+    setNotice("");
+    try {
+      const response = await fetch("/api/companies/refresh", { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? data.message ?? "Could not refresh funding data.");
+      const cooldown = data.nextAllowedAttemptAt ? ` Next allowed attempt: ${formatDateTime(Date.parse(data.nextAllowedAttemptAt), "UTC")} UTC.` : "";
+      setNotice((data.message ?? "Refresh finished.") + cooldown);
+      setAttempt(value => value + 1);
+    } catch (cause) {
+      setNotice(cause instanceof Error ? cause.message : "Could not refresh funding data.");
+    } finally {
+      refreshInFlight.current = false;
+      setRefreshing(false);
+    }
+  }
 
   const visible = companies
     .filter((company) => company.name.toLowerCase().includes(query.trim().toLowerCase()))
@@ -127,8 +150,14 @@ function Discovery() {
                 <option value="name">Company name</option>
               </select>
             </div>
+            <button onClick={refresh} disabled={loading || refreshing}>
+              {refreshing ? "Refreshing…" : "Refresh funding data"}
+            </button>
           </div>
-          {notice && !error && <p className="access-notice">{notice}</p>}
+          {snapshot && <p>Last refreshed: {formatDateTime(Date.parse(snapshot.fetchedAt), "UTC")} UTC · Coverage: {snapshot.coverage}
+            {" · "}Funding window: {snapshot.windowStart.slice(0, 10)} to {snapshot.windowEnd.slice(0, 10)} (end exclusive, UTC)
+            {snapshot.fetchedAt.slice(0, 10) !== new Date().toISOString().slice(0, 10) && " · Older saved data"}</p>}
+          <p role="status" aria-live="polite">{refreshing ? "Collecting funding data… Saved results remain available." : notice}</p>
           {loading ? <p className="message" role="status">Loading companies…</p>
             : error ? <div className="message" role="alert"><p>{error}</p>
               <button onClick={() => setAttempt((value) => value + 1)}>Retry</button></div>
@@ -149,7 +178,7 @@ function Discovery() {
                 </table>
               </div>
               {visible.length === 0 && <div className="message" role="status">
-                <p>{companies.length ? "No companies match your search." : "No companies available yet."}</p>
+                <p>{companies.length ? "No companies match your search." : (snapshot ? "No matching companies in this funding window." : "No saved data. Click Refresh funding data to collect companies.")}</p>
                 {query && <button onClick={() => setQuery("")}>Clear search</button>}
               </div>}
             </>}
@@ -157,7 +186,7 @@ function Discovery() {
         <footer className="status-bar" aria-live="polite" aria-atomic="true">
           <p className="status-bar-field">{loading ? "Loading…" : error ? "Could not load companies" :
             `Showing ${visible.length} of ${companies.length} loaded companies`}</p>
-          <p className="status-bar-field">Source: RecentFunding · US and unknown locations · {excluded} non-US excluded</p>
+          <p className="status-bar-field">Source: RecentFunding · US and unknown locations · 14-day Free-plan delay</p>
         </footer>
       </section>
     </main>

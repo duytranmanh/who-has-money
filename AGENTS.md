@@ -1,3 +1,8 @@
+## Documentation placement
+
+- Keep implementation details and technical workflow documentation under `docs/`, not the main `README.md`.
+- Do not edit the main `README.md` unless explicitly requested.
+
 ## Project scope and decision rules
 
 This is personal software for one user, running locally.

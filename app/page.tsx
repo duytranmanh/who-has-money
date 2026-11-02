@@ -16,7 +16,7 @@ type Company = {
   location: string;
   description: string;
   investors: string[];
-  source: string | null;
+  linkedin: string | null;
 };
 type SnapshotInfo = { fetchedAt: string; windowStart: string; windowEnd: string; coverage: "complete" };
 type Sort = "date" | "amount" | "name";
@@ -55,7 +55,10 @@ function parseCompany(value: unknown): Company {
     location: [row.hq_city, row.hq_country].filter(value => typeof value === "string" && value.trim()).join(", "),
     description: typeof row.description === "string" ? row.description : "",
     investors: Array.isArray(row.investors) ? row.investors.filter((value): value is string => typeof value === "string") : [],
-    source: webLink(row.raise_source_url),
+    linkedin: webLink(row.linkedin_url) ?? webLink(
+      row.source_links && typeof row.source_links === "object"
+        ? (row.source_links as Record<string, unknown>).linkedin : null,
+    ),
   };
 }
 
@@ -83,7 +86,7 @@ function CompanyDetails({ company, onClose }: { company: Company; onClose: () =>
     }} onClick={event => { if (event.target === event.currentTarget) event.currentTarget.close(); }}>
     <div className="title-bar">
       <div className="title-bar-text">Company Details — {company.name}</div>
-      <div className="title-bar-controls"><button aria-label="Close company details" onClick={() => dialog.current?.close()} /></div>
+      <div className="title-bar-controls"><button aria-label="Close" title="Close company details" onClick={() => dialog.current?.close()} /></div>
     </div>
     <div className="company-dialog-body">
       <header className="details-header">
@@ -98,7 +101,8 @@ function CompanyDetails({ company, onClose }: { company: Company; onClose: () =>
         {company.investors.length ? <ul className="investor-list">{company.investors.map((investor, index) => <li key={index}>{investor}</li>)}</ul> : <p>No investors disclosed.</p>}</section>
       <footer className="details-actions">
         {company.website && <a href={company.website} target="_blank" rel="noopener noreferrer">Company website ↗</a>}
-        {company.source && <a href={company.source} target="_blank" rel="noopener noreferrer">Funding source ↗</a>}
+        <a href={company.linkedin ?? `https://www.linkedin.com/search/results/companies/?keywords=${encodeURIComponent(company.name)}`}
+          target="_blank" rel="noopener noreferrer">{company.linkedin ? "LinkedIn ↗" : "Find on LinkedIn ↗"}</a>
         <button onClick={() => dialog.current?.close()}>Close</button>
       </footer>
     </div>

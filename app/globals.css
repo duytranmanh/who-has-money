@@ -24,6 +24,9 @@ h1 { font-size: 24px; margin: 0 0 8px; }
 .companies-window tbody th { white-space: normal; min-width: 180px; }
 .companies-window tbody tr:last-child > * { border-bottom: 0; }
 .companies-window tbody tr:hover { background: #eef4ff; }
+.companies-window .company-row { cursor: pointer; }
+.companies-window .company-row:focus-within { background: #eef4ff; }
+.companies-window .company-name { cursor: pointer; }
 .companies-window .amount { text-align: right; font-variant-numeric: tabular-nums; }
 .stage { text-transform: capitalize; }
 a { color: #0645ad; }
@@ -42,7 +45,7 @@ a { color: #0645ad; }
 
 .app-navigation { max-width: 1040px; margin: 24px auto 0; padding: 0 12px; display: flex; gap: 8px; }
 .app-navigation button[aria-pressed="true"] { font-weight: bold; box-shadow: inset 1px 1px 3px #777; }
-.app-navigation ~ div .desktop { padding-top: 16px; }
+.app-navigation ~ .discovery-panel .desktop { padding-top: 0; }
 [hidden] { display: none !important; }
 .tracker-editor { border: 1px solid #aaa; padding: 16px; margin-bottom: 24px; }
 .tracker-editor h2 { margin-top: 0; }
@@ -191,3 +194,67 @@ body { background: #4a7596; }
 .outreach-cards { list-style: none; padding: 0; }
 .inspector-card .outreach-cards { padding-left: 0; }
 .outreach-message { padding: 10px; border: 1px solid #cbd1dc; background: #faf8f2; }
+
+/* Discovery keeps the XP frame while giving grouped records more room. */
+.discovery-panel .desktop { padding: 0 8px 8px; }
+.discovery-panel .companies-window { max-width: none; }
+.companies-window h1.title-bar-text { margin: 0; font-size: 13px; }
+.companies-window .window-body { padding: 8px; gap: 6px; }
+.companies-window .toolbar { display: flex; align-items: center; background: #e8e5d5; border: 1px solid #b5b2a5; border-radius: 3px; padding: 6px; gap: 8px; margin: 0; flex-wrap: wrap; }
+.companies-window .toolbar > button { min-height: 30px; }
+.discovery-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 16px; font-size: 11px; color: #555; min-height: 20px; }
+.discovery-notice { margin-left: auto; }
+.snapshot-details { position: relative; }
+.snapshot-details summary { cursor: pointer; }
+.snapshot-details > div { position: absolute; top: 100%; left: 0; z-index: 3; width: min(360px, calc(100vw - 40px)); background: #ffffed; border: 1px solid #aaa; padding: 10px; line-height: 1.6; box-shadow: 2px 3px 8px #0003; }
+.companies-window .status-bar-field { padding: 3px 6px; font-size: 10px; }
+.companies-window .toolbar .control { flex: 1; min-width: 150px; }
+.companies-window .toolbar .search-control { flex: 2; min-width: 220px; }
+.companies-window .toolbar select { min-width: 0; }
+.companies-window .table-scroll { border: 2px solid #7f9db9; border-radius: 3px; }
+.companies-window thead th { font-weight: bold; text-transform: uppercase; color: #3b4655; background: #ece9d8; z-index: 1; }
+.companies-window th, .companies-window td { padding: 7px 10px; }
+.companies-window .date-group th { padding: 0; background: #e4e1d1; border-block: 1px solid #bab7a7; }
+.companies-window .date-group button { width: 100%; text-align: left; background: transparent; box-shadow: none; border: 0; padding: 9px 12px; color: #18212f; font: bold 12px Tahoma, sans-serif; text-transform: uppercase; white-space: normal; }
+.date-group button > span:first-child { color: #2456c9; margin-right: 6px; }
+.group-count { color: #657080; font-weight: normal; }
+.companies-window .company-name { display: inline-flex; align-items: center; gap: 9px; min-width: 0; padding: 0; border: 0; box-shadow: none; background: transparent; color: #18212f; text-align: left; font: bold 13px Tahoma, sans-serif; text-decoration: underline dotted #9aa4b2; text-underline-offset: 3px; }
+.company-initial { display: grid; place-items: center; flex-shrink: 0; width: 24px; height: 24px; border-radius: 4px; background: #2456c9; color: white; text-decoration: none; }
+.industry-label { text-transform: capitalize; max-width: 260px; white-space: normal; }
+.stage-badge { display: inline-block; border: 1px solid #cbd1dc; border-radius: 3px; padding: 3px 6px; background: #f2f3f5; color: #647084; font-size: 10px; font-weight: bold; text-transform: uppercase; }
+.stage-badge[data-stage="pre-seed"] { background: #f3e8ff; color: #7024aa; border-color: #d8b4fe; }
+.stage-badge[data-stage="seed"] { background: #d1fae5; color: #006d51; border-color: #6ee7b7; }
+.stage-badge[data-stage="series-a"] { background: #dbeafe; color: #1e40af; border-color: #93c5fd; }
+.stage-badge[data-stage="series-b+"] { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
+.company-dialog { width: min(680px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); margin: auto; padding: 3px; border: 0; color: #18212f; }
+.company-dialog::backdrop { background: rgb(0 0 0 / 40%); }
+.company-dialog .title-bar-text { font-size: 13px; }
+.company-dialog-body { padding: 18px; background: #f5f3eb; }
+.details-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 16px; background: white; border: 1px solid #7f9db9; }
+.details-header h2 { font-size: 20px; margin: 0 0 8px; overflow-wrap: anywhere; }
+.details-header p { margin: 8px 0 0; color: #657080; line-height: 1.5; }
+.round-size { text-align: right; flex-shrink: 0; }
+.round-size span { display: block; text-transform: uppercase; font-size: 10px; color: #657080; }
+.round-size strong { display: block; margin-top: 6px; color: #92400e; font-size: 24px; }
+.details-card { padding: 14px; background: white; border: 1px solid #d0ccb8; margin-top: 12px; }
+.details-card h3 { font-size: 13px; margin: 0 0 10px; padding-bottom: 8px; border-bottom: 1px solid #e4e4e4; color: #173b80; }
+.details-card p { line-height: 1.65; overflow-wrap: anywhere; margin: 8px 0 0; }
+.investor-list { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.investor-list li { background: #edf4ff; border: 1px solid #c7d9f5; padding: 4px 8px; }
+.details-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; margin-top: 18px; }
+.details-actions button { margin-left: auto; }
+@media (max-width: 680px) {
+  .discovery-panel .desktop { padding: 8px; }
+  .companies-window .toolbar .control { min-width: 0; width: 100%; }
+  .details-header { flex-direction: column; }
+  .round-size { text-align: left; }
+  .company-dialog-body { padding: 12px; }
+}
+
+@media (max-width: 600px) {
+  .companies-window .toolbar { flex-direction: row; }
+  .companies-window .toolbar .control { flex: 1 1 calc(50% - 8px); }
+  .companies-window .toolbar .search-control { flex-basis: 100%; }
+  .discovery-meta { align-items: flex-start; }
+  .discovery-notice { margin-left: 0; }
+}

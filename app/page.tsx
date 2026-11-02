@@ -246,9 +246,9 @@ function Discovery() {
                 <table>
                   <caption className="sr-only">Recently funded companies, amounts in US dollars. Missing values shown as a dash.</caption>
                   <thead><tr><th scope="col">Company</th><th scope="col">Category / sector</th>
-                    <th scope="col">Stage</th><th scope="col">HQ / location</th><th scope="col">Announced</th><th scope="col">Action</th></tr></thead>
+                    <th scope="col">Stage</th><th scope="col">HQ / location</th><th scope="col">Announced</th></tr></thead>
                   <tbody>{[...groups].map(([key, rows]) => <Fragment key={key}>
-                    {key !== "all" && <tr className="date-group"><th colSpan={6} scope="rowgroup">
+                    {key !== "all" && <tr className="date-group"><th colSpan={5} scope="rowgroup">
                       <button aria-expanded={!collapsed.has(key)} onClick={() => setCollapsed(current => {
                         const next = new Set(current);
                         if (next.has(key)) next.delete(key); else next.add(key);
@@ -256,14 +256,13 @@ function Discovery() {
                       })}><span aria-hidden="true">{collapsed.has(key) ? "▶" : "▼"}</span> {key === "latest" ? `Latest rounds — ${dateLabel(rows[0].date!)}` : "Previous rounds"}
                         <span className="group-count"> · {rows.length} {rows.length === 1 ? "company" : "companies"} announced</span></button>
                     </th></tr>}
-                    {(key === "all" || !collapsed.has(key)) && rows.map(company => <tr key={company.slug}>
-                      <th scope="row"><button className="company-name" onClick={() => setSelected(company)}>
+                    {(key === "all" || !collapsed.has(key)) && rows.map(company => <tr key={company.slug} className="company-row" onClick={() => setSelected(company)}>
+                      <th scope="row"><button className="company-name" aria-label={`View details for ${company.name}`} onClick={event => { event.stopPropagation(); setSelected(company); }}>
                         <span className="company-initial" aria-hidden="true">{company.name.slice(0, 1)}</span>{company.name}</button></th>
                       <td className="industry-label">{label(company.industry) || company.sector || "—"}</td>
                       <td><span className="stage-badge" data-stage={company.stage}>{company.stage ? label(company.stage) : "—"}</span></td>
                       <td>{company.location || "—"}</td>
                       <td>{company.date === null ? "—" : dateLabel(company.date)}</td>
-                      <td><button onClick={() => setSelected(company)} aria-label={`Inspect ${company.name}`}>Inspect</button></td>
                     </tr>)}
                   </Fragment>)}</tbody>
                 </table>

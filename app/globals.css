@@ -24,6 +24,9 @@ h1 { font-size: 24px; margin: 0 0 8px; }
 .companies-window tbody th { white-space: normal; min-width: 180px; }
 .companies-window tbody tr:last-child > * { border-bottom: 0; }
 .companies-window tbody tr:hover { background: #eef4ff; }
+.companies-window .company-row { cursor: pointer; }
+.companies-window .company-row:focus-within { background: #eef4ff; }
+.companies-window .company-name { cursor: pointer; }
 .companies-window .amount { text-align: right; font-variant-numeric: tabular-nums; }
 .stage { text-transform: capitalize; }
 a { color: #0645ad; }

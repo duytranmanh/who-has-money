@@ -11,6 +11,8 @@
     "test:run": "vitest run"
   },
   "dependencies": {
+    "cheerio": "^1.2.0",
+    "groq-sdk": "^1.6.0",
     "next": "16.4.2",
     "react": "19.3.0",
     "react-dom": "19.3.0",

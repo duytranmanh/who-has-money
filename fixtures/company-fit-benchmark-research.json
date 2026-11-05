@@ -1,0 +1,534 @@
+{
+  "schema_version": "1.0",
+  "research_date": "2026-11-03",
+  "assessment_status": "provisional_research_not_gold_labels",
+  "input_source": "/Users/duy/Documents/MISC/LEARNING_MATERIALS/who-has-money/fixtures/companies.json",
+  "profile_source": "about-me.md",
+  "criteria": {
+    "target": "Software engineering roles at early-stage startups.",
+    "hard_requirements": [
+      "Company is US-based.",
+      "Company is outside the space industry.",
+      "Company has software engineering work."
+    ],
+    "preferences": [
+      "Small teams where software is central to the product.",
+      "AI applications, product engineering, or systems engineering; any one can establish interest.",
+      "Explicit entry-level openings are a plus, not a requirement.",
+      "Strong company fit can justify cold outreach without an advertised opening."
+    ],
+    "recommendation_policy": "Return up to three recommendations with supported fit and a credible next step. Return fewer when warranted; small size alone does not establish fit."
+  },
+  "research_limitations": [
+    "This file records research already performed in this conversation; sources were not comprehensively rechecked when the file was saved.",
+    "These assessments are starting points for manual evaluation, not benchmark ground-truth labels.",
+    "Funding stages and locations under input_metadata are copied from the fixture and are not independently verified by their presence there.",
+    "Company size, funding stage, and current SWE hiring are not verified for every company.",
+    "No explicit entry-level SWE opening was verified among these ten companies. Missing evidence does not establish that no opening exists.",
+    "US location does not establish work-authorization or visa-sponsorship compatibility; those remain unknown.",
+    "Cold-outreach suggestions require identifying an appropriate recipient. No outreach was sent."
+  ],
+  "companies": [
+    {
+      "slug": "adminify",
+      "company": "Adminify",
+      "website": "https://adminify.ai/",
+      "input_metadata": {
+        "stage": "series-b+",
+        "hq_city": "Lehi",
+        "hq_country": "United States"
+      },
+      "fit_judgment": "possible_fit",
+      "fit_summary": "Promising focused AI product and customer-configuration work; early-stage status and hiring remain unverified.",
+      "reasons_connected_to_profile": [
+        {
+          "reason": "AI calls, messaging, and booking fit Duy's interest in applying AI to a specific user workflow. MindFlow demonstrates building a working AI application with retrieval and an interactive interface; it does not establish voice-agent expertise.",
+          "supporting_fact_ids": ["adminify_1"]
+        },
+        {
+          "reason": "Shared brand rules with location-specific settings suggest a useful conversation about product configuration. Duy's DESFire redesign demonstrates representing customer differences through reusable configuration. This is an inferred relevance connection, not evidence of an internal Adminify engineering problem.",
+          "supporting_fact_ids": ["adminify_2"]
+        }
+      ],
+      "supporting_facts": [
+        {
+          "id": "adminify_1",
+          "claim": "Adminify markets AI agents for franchise and multi-location businesses that answer calls, engage leads, and book appointments.",
+          "source_url": "https://adminify.ai/"
+        },
+        {
+          "id": "adminify_2",
+          "claim": "The product describes centrally controlled brand standards alongside location-specific hours, services, routing, and systems.",
+          "source_url": "https://adminify.ai/"
+        },
+        {
+          "id": "adminify_3",
+          "claim": "The company-published LinkedIn page lists Lehi, Utah as headquarters.",
+          "source_url": "https://www.linkedin.com/company/adminify-ai"
+        }
+      ],
+      "mismatches": [],
+      "unknowns": [
+        "Current engineering team size and independently verified funding stage.",
+        "Current SWE openings and willingness to hire an early-career engineer.",
+        "Appropriate engineering decision-maker and contact channel.",
+        "Work-authorization and sponsorship compatibility."
+      ],
+      "recommended_next_step": {
+        "action": "cold_outreach",
+        "reason": "Identify a founder or engineering lead and ask whether the team has early-career product or backend engineering needs. Confirm team stage during research.",
+        "url": "https://adminify.ai/",
+        "contact": null,
+        "url_purpose": "Company research starting point; not a verified hiring contact."
+      },
+      "evidence_checked_at": "2026-11-03"
+    },
+    {
+      "slug": "storyflight-labs",
+      "company": "Storyflight Labs",
+      "website": "https://storyflightlabs.com/",
+      "input_metadata": {
+        "stage": "seed",
+        "hq_city": "Pittsburgh",
+        "hq_country": "United States"
+      },
+      "fit_judgment": "possible_fit",
+      "fit_summary": "Potential user-focused application engineering fit; technical scope, team size, and hiring need verification.",
+      "reasons_connected_to_profile": [
+        {
+          "reason": "Building a communication application around specific user needs fits Duy's product engineering interest. His GE capstone involved understanding device-log investigation workflows and using user feedback to guide the product. This supports a product-development approach, not expertise in assistive communication.",
+          "supporting_fact_ids": ["storyflight_1"]
+        },
+        {
+          "reason": "The company's stated use of AI provides a potential focused-application interest. MindFlow is relevant evidence of turning an AI product idea into a working application, but the website does not establish Storyflight's exact AI engineering needs.",
+          "supporting_fact_ids": ["storyflight_2"]
+        }
+      ],
+      "supporting_facts": [
+        {
+          "id": "storyflight_1",
+          "claim": "Talk to Me, Goose! is described as a text-to-speech application built with and for people with ALS and other speech-limiting conditions, and their caregivers.",
+          "source_url": "https://storyflightlabs.com/"
+        },
+        {
+          "id": "storyflight_2",
+          "claim": "Storyflight describes using AI and modern tools and lists both assistive communication and audio storytelling products.",
+          "source_url": "https://storyflightlabs.com/"
+        },
+        {
+          "id": "storyflight_3",
+          "claim": "The company website identifies Storyflight Labs as a public benefit corporation in Pittsburgh, Pennsylvania.",
+          "source_url": "https://storyflightlabs.com/"
+        },
+        {
+          "id": "storyflight_4",
+          "claim": "An August 4, 2026 company announcement names Zoe Krislock as CEO and David Betts as founder and board chair.",
+          "source_url": "https://storyflightlabs.com/news/"
+        }
+      ],
+      "mismatches": [],
+      "unknowns": [
+        "Engineering team size, technical stack, and which product work is performed in-house.",
+        "Current SWE openings and early-career hiring interest.",
+        "Best engineering contact; the published leadership announcement alone does not identify who owns engineering hiring.",
+        "Work-authorization and sponsorship compatibility."
+      ],
+      "recommended_next_step": {
+        "action": "cold_outreach",
+        "reason": "Identify the person responsible for product engineering and ask about early-career software needs. Lead with product development around user workflows.",
+        "url": "https://storyflightlabs.com/",
+        "contact": null,
+        "url_purpose": "Company research starting point; not a verified hiring contact."
+      },
+      "evidence_checked_at": "2026-11-03"
+    },
+    {
+      "slug": "dashfuel",
+      "company": "DashFuel",
+      "website": "https://www.getdashfuel.com/",
+      "input_metadata": {
+        "stage": "series-b+",
+        "hq_city": "Weston",
+        "hq_country": "United States"
+      },
+      "fit_judgment": "possible_fit",
+      "fit_summary": "Substantive operational software with plausible backend and product engineering fit; stage and hiring require verification.",
+      "reasons_connected_to_profile": [
+        {
+          "reason": "A connected product spanning dispatch, delivery, billing, and integrations fits Duy's interest in understanding workflows and building across the stack. Last Lock's release tooling and GE's investigation platform demonstrate shipping tools around user needs.",
+          "supporting_fact_ids": ["dashfuel_1", "dashfuel_2"]
+        },
+        {
+          "reason": "Backend integration work is a plausible area to explore given Duy's service integration and asynchronous ingestion experience. The public product description does not establish DashFuel's architecture, throughput, or current infrastructure problems.",
+          "supporting_fact_ids": ["dashfuel_1"]
+        }
+      ],
+      "supporting_facts": [
+        {
+          "id": "dashfuel_1",
+          "claim": "DashFuel provides petroleum distribution software including quoting, tank monitoring, dispatching, a driver app, data reconciliation, billing, and back-office integration.",
+          "source_url": "https://www.getdashfuel.com/"
+        },
+        {
+          "id": "dashfuel_2",
+          "claim": "The company says its software was designed and built alongside owners, dispatchers, drivers, and accountants.",
+          "source_url": "https://www.getdashfuel.com/"
+        },
+        {
+          "id": "dashfuel_3",
+          "claim": "The company-published LinkedIn page identifies DashFuel as a software development company headquartered in Weston, Connecticut.",
+          "source_url": "https://www.linkedin.com/company/dashfuel"
+        },
+        {
+          "id": "dashfuel_4",
+          "claim": "DashFuel's Wellfound profile describes an early-stage remote team across the US and Europe; its jobs page showed no added jobs when checked. This profile does not independently verify current funding stage or the absence of hiring elsewhere.",
+          "source_url": "https://wellfound.com/company/dashfuel/jobs"
+        }
+      ],
+      "mismatches": [
+        {
+          "reason": "The fixture's series-b+ label and the Wellfound early-stage description provide inconsistent signals about company stage; neither is sufficient to settle the question.",
+          "supporting_fact_ids": ["dashfuel_4"]
+        }
+      ],
+      "unknowns": [
+        "Verified funding stage and current engineering team size.",
+        "Current SWE needs and early-career hiring interest.",
+        "Duy's interest in this specific operational product; interest in petroleum is not established.",
+        "Work-authorization and sponsorship compatibility."
+      ],
+      "recommended_next_step": {
+        "action": "cold_outreach",
+        "reason": "Identify an engineering lead and ask about backend or full-stack opportunities, while verifying team stage. Explain interest in operational software rather than claiming industry enthusiasm.",
+        "url": "https://www.getdashfuel.com/",
+        "contact": null,
+        "url_purpose": "Company research starting point; not a verified hiring contact."
+      },
+      "evidence_checked_at": "2026-11-03"
+    },
+    {
+      "slug": "growthware",
+      "company": "Growthware",
+      "website": "https://growthware.com/",
+      "input_metadata": {
+        "stage": "pre-seed",
+        "hq_city": "Fort Worth",
+        "hq_country": "United States"
+      },
+      "fit_judgment": "possible_fit",
+      "fit_summary": "Relevant full-stack and integration work, with a confirmed experience mismatch in the published role. Cold outreach remains possible.",
+      "reasons_connected_to_profile": [
+        {
+          "reason": "The advertised work combines product features, external service integrations, and AWS. Duy has shipped customer-facing and internal tools across Go services, frontend interfaces, and AWS infrastructure.",
+          "supporting_fact_ids": ["growthware_1", "growthware_2"]
+        }
+      ],
+      "supporting_facts": [
+        {
+          "id": "growthware_1",
+          "claim": "Growthware's product combines CRM, scheduling, payments, and other small-business operations in a software platform.",
+          "source_url": "https://growthware.com/"
+        },
+        {
+          "id": "growthware_2",
+          "claim": "The Full Stack Engineer posting lists USA and describes product development, external APIs, service integrations, and AWS experience.",
+          "source_url": "https://growthware.com/career/full-stack-engineer"
+        },
+        {
+          "id": "growthware_3",
+          "claim": "The posting requests 4+ years of production backend web application experience and 4+ years of frontend JavaScript development.",
+          "source_url": "https://growthware.com/career/full-stack-engineer"
+        }
+      ],
+      "mismatches": [
+        {
+          "reason": "The published role requests substantially more experience than Duy's documented early-career background. This is a role mismatch, not proof that all outreach to the company is unsuitable.",
+          "supporting_fact_ids": ["growthware_3"]
+        }
+      ],
+      "unknowns": [
+        "Whether the published role is still actively accepting candidates; a live page alone does not confirm this.",
+        "Whether the company would consider a separate early-career opportunity.",
+        "Current team size and independently verified stage.",
+        "Work-authorization and sponsorship compatibility."
+      ],
+      "recommended_next_step": {
+        "action": "cold_outreach",
+        "reason": "Ask an engineering decision-maker whether there is room for an early-career SWE rather than presenting the advertised 4+ year role as a direct match.",
+        "url": "https://growthware.com/about-us",
+        "contact": null,
+        "url_purpose": "Team research starting point; recipient and contact channel still need verification."
+      },
+      "evidence_checked_at": "2026-11-03"
+    },
+    {
+      "slug": "rf-gaming-systems",
+      "company": "RF Gaming Systems",
+      "website": "https://www.rfgamingsystems.com/",
+      "input_metadata": {
+        "stage": "seed",
+        "hq_city": "Cary",
+        "hq_country": "United States"
+      },
+      "fit_judgment": "possible_fit",
+      "fit_summary": "Potential device-to-software and operational product fit; the engineering scope and hiring model are unclear.",
+      "reasons_connected_to_profile": [
+        {
+          "reason": "Turning physical events into useful operational information could fit Duy's product and systems interests. His GE log platform and Last Lock heartbeat dashboard demonstrate connecting device information to investigation or monitoring workflows.",
+          "supporting_fact_ids": ["rf_gaming_1", "rf_gaming_2"]
+        },
+        {
+          "reason": "Last Lock provides experience working across device messages, services, and interfaces. Shared RFID terminology with DESFire is not itself evidence of role fit, and Duy's DESFire contribution should remain framed as reusable configuration design.",
+          "supporting_fact_ids": ["rf_gaming_1"]
+        }
+      ],
+      "supporting_facts": [
+        {
+          "id": "rf_gaming_1",
+          "claim": "CasinoSense is described as an RFID intelligence platform that tracks casino chips, hands, and tables in real time.",
+          "source_url": "https://www.rfgamingsystems.com/"
+        },
+        {
+          "id": "rf_gaming_2",
+          "claim": "The product includes player analytics, transaction-related tracking, and operational intelligence.",
+          "source_url": "https://www.rfgamingsystems.com/products"
+        }
+      ],
+      "mismatches": [],
+      "unknowns": [
+        "US headquarters is recorded in the fixture but was not independently verified in the reviewed company pages.",
+        "Which software is developed in-house and the balance of hardware, firmware, and application work.",
+        "Current engineering headcount, hiring needs, and capacity to support an early-career hire.",
+        "Duy's interest in casino-related products.",
+        "Work-authorization and sponsorship compatibility."
+      ],
+      "recommended_next_step": {
+        "action": "verify",
+        "reason": "Confirm US location and in-house application engineering scope before deciding whether targeted outreach is worthwhile. The published contact is a general inquiry channel, not a hiring contact.",
+        "url": "https://www.rfgamingsystems.com/contact",
+        "contact": null,
+        "url_purpose": "Published general inquiry page."
+      },
+      "evidence_checked_at": "2026-11-03"
+    },
+    {
+      "slug": "giftbetter",
+      "company": "GiftBetter",
+      "website": "https://giftbetter.com/",
+      "input_metadata": {
+        "stage": "seed",
+        "hq_city": "St Louis",
+        "hq_country": "United States"
+      },
+      "fit_judgment": "possible_fit",
+      "fit_summary": "A software platform obscured by a food-agriculture fixture category; plausible product engineering outreach target, with hiring unknown.",
+      "reasons_connected_to_profile": [
+        {
+          "reason": "A customer-facing product connecting gift purchasers, recipients, and merchants could fit Duy's full-stack product interest. His Last Lock work demonstrates delivering interfaces with backend integrations; the exact relevance depends on GiftBetter's engineering needs.",
+          "supporting_fact_ids": ["giftbetter_1", "giftbetter_2"]
+        }
+      ],
+      "supporting_facts": [
+        {
+          "id": "giftbetter_1",
+          "claim": "GiftBetter lets users buy personalized local gift cards and lets recipients swap to another participating business.",
+          "source_url": "https://giftbetter.com/"
+        },
+        {
+          "id": "giftbetter_2",
+          "claim": "Company terms describe its software, APIs, applications, transaction facilitation, and third-party integrations as part of its services.",
+          "source_url": "https://giftbetter.com/terms"
+        },
+        {
+          "id": "giftbetter_3",
+          "claim": "The website identifies GiftBetter as made in St. Louis, Missouri.",
+          "source_url": "https://giftbetter.com/"
+        }
+      ],
+      "mismatches": [],
+      "unknowns": [
+        "Current engineering headcount and independently verified funding stage.",
+        "Current SWE hiring needs and interest in an early-career engineer.",
+        "Appropriate founder or engineering recipient and contact channel.",
+        "Duy's interest in this specific product beyond general full-stack work.",
+        "Work-authorization and sponsorship compatibility."
+      ],
+      "recommended_next_step": {
+        "action": "cold_outreach",
+        "reason": "Identify a founder or engineering lead and ask about product engineering needs. Do not reject solely because the fixture labels the company food-agriculture.",
+        "url": "https://giftbetter.com/",
+        "contact": null,
+        "url_purpose": "Company research starting point; not a verified hiring contact."
+      },
+      "evidence_checked_at": "2026-11-03"
+    },
+    {
+      "slug": "oro-mobility",
+      "company": "Oro Mobility",
+      "website": "https://www.oromobility.com/",
+      "input_metadata": {
+        "stage": "unknown",
+        "hq_city": null,
+        "hq_country": null
+      },
+      "fit_judgment": "insufficient_evidence",
+      "fit_summary": "US operations are supported, but fleet operations and autonomous-vehicle association do not establish a suitable software role or small-startup environment.",
+      "reasons_connected_to_profile": [
+        {
+          "reason": "Duy's operational tooling and customer-facing engineering could become relevant if Oro owns a suitable software product internally. The reviewed company description is not enough to establish that connection.",
+          "supporting_fact_ids": ["oro_1", "oro_2"]
+        }
+      ],
+      "supporting_facts": [
+        {
+          "id": "oro_1",
+          "claim": "The company-published LinkedIn page describes Oro as a separate operating affiliate of Hertz providing fleet management for driver-led and autonomous vehicles.",
+          "source_url": "https://www.linkedin.com/company/oromobility/"
+        },
+        {
+          "id": "oro_2",
+          "claim": "The same page identifies operations in Atlanta, Los Angeles, San Francisco, and Newark and includes recruiting posts for fleet, safety, and operations roles.",
+          "source_url": "https://www.linkedin.com/company/oromobility/"
+        }
+      ],
+      "mismatches": [
+        {
+          "reason": "A Hertz-affiliated fleet operator is not yet established as the small, software-centered startup environment Duy prefers.",
+          "supporting_fact_ids": ["oro_1", "oro_2"]
+        }
+      ],
+      "unknowns": [
+        "Verified headquarters; US operations alone do not resolve the US-based-company requirement.",
+        "Ownership and size of the in-house software engineering team.",
+        "Suitable early-career software work and its importance to the business.",
+        "Company stage and degree of operational independence from Hertz.",
+        "Work-authorization and sponsorship compatibility."
+      ],
+      "recommended_next_step": {
+        "action": "verify",
+        "reason": "Check official engineering roles and product ownership before spending time on outreach. The company website returned a 403 during research, so the company-published LinkedIn page was used as a fallback.",
+        "url": "https://www.linkedin.com/company/oromobility/",
+        "contact": null,
+        "url_purpose": "Company-published fallback source."
+      },
+      "evidence_checked_at": "2026-11-03"
+    },
+    {
+      "slug": "dilt-analytics",
+      "company": "DiLT Analytics",
+      "website": "https://diltanalytics.com/",
+      "input_metadata": {
+        "stage": "seed",
+        "hq_city": "Graz",
+        "hq_country": "Austria"
+      },
+      "fit_judgment": "reject",
+      "fit_summary": "Fails the US-based-company requirement: the official company address and published full-stack role are in Austria.",
+      "reasons_connected_to_profile": [],
+      "supporting_facts": [
+        {
+          "id": "dilt_1",
+          "claim": "The company's legal notice lists DiLT Analytics FlexCo at Nikolaiplatz 4, AT-8020 Graz, Austria.",
+          "source_url": "https://diltanalytics.com/about/"
+        },
+        {
+          "id": "dilt_2",
+          "claim": "The official company page lists a Fullstack Developer position in Graz, Austria.",
+          "source_url": "https://diltanalytics.com/about/"
+        }
+      ],
+      "mismatches": [
+        {
+          "reason": "Company is based outside the US, contrary to a hard requirement.",
+          "supporting_fact_ids": ["dilt_1"]
+        }
+      ],
+      "unknowns": [],
+      "recommended_next_step": {
+        "action": "skip",
+        "reason": "Stop fit and contact research after confirming the geographic exclusion.",
+        "url": null,
+        "contact": null,
+        "url_purpose": null
+      },
+      "evidence_checked_at": "2026-11-03"
+    },
+    {
+      "slug": "zero-industries",
+      "company": "Zero Industries",
+      "website": "https://zero.space/",
+      "input_metadata": {
+        "stage": "pre-seed",
+        "hq_city": "San Jose",
+        "hq_country": "United States"
+      },
+      "fit_judgment": "reject",
+      "fit_summary": "Published satellite hardware work triggers the space-industry exclusion.",
+      "reasons_connected_to_profile": [],
+      "supporting_facts": [
+        {
+          "id": "zero_1",
+          "claim": "The official careers page lists a Satellite Hardware Engineer position covering satellite design, assembly, and testing.",
+          "source_url": "https://zero.space/company/careers/"
+        },
+        {
+          "id": "zero_2",
+          "claim": "The careers page describes a small hardware development team, with all roles on-site in San Francisco.",
+          "source_url": "https://zero.space/company/careers/"
+        }
+      ],
+      "mismatches": [
+        {
+          "reason": "Satellite work falls within Duy's stated space exclusion. This conclusion uses published work rather than the .space domain name.",
+          "supporting_fact_ids": ["zero_1"]
+        }
+      ],
+      "unknowns": [],
+      "recommended_next_step": {
+        "action": "skip",
+        "reason": "Stop further fit and contact research after confirming space-related work. No separate claim about clearance or visa requirements is needed.",
+        "url": null,
+        "contact": null,
+        "url_purpose": null
+      },
+      "evidence_checked_at": "2026-11-03"
+    },
+    {
+      "slug": "dan-o-s-seasoning",
+      "company": "Dan-O's Seasoning",
+      "website": "https://danosseasoning.com/",
+      "input_metadata": {
+        "stage": "series-b+",
+        "hq_city": "Louisville",
+        "hq_country": "United States"
+      },
+      "fit_judgment": "reject",
+      "fit_summary": "Low-priority fit rejection: the reviewed product is a seasoning business, and suitable software engineering work was not established.",
+      "reasons_connected_to_profile": [],
+      "supporting_facts": [
+        {
+          "id": "danos_1",
+          "claim": "The official website presents seasoning blends, food products, recipes, and an online store.",
+          "source_url": "https://danosseasoning.com/"
+        }
+      ],
+      "mismatches": [
+        {
+          "reason": "The reviewed business does not support the preference for software as a central product. The fixture's robotics-hardware category is inconsistent with the official product presentation.",
+          "supporting_fact_ids": ["danos_1"]
+        }
+      ],
+      "unknowns": [
+        "Whether there is an internal software engineering team or a suitable SWE role. The website does not prove that no such work exists."
+      ],
+      "recommended_next_step": {
+        "action": "skip",
+        "reason": "Deprioritize under the software-centered-product preference. Treat this as a fit rejection rather than a proven absence of all software work.",
+        "url": null,
+        "contact": null,
+        "url_purpose": null
+      },
+      "evidence_checked_at": "2026-11-03"
+    }
+  ]
+}

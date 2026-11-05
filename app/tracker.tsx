@@ -1,6 +1,7 @@
 "use client";
 
 import { formatDateTime } from "@/lib/date-time";
+import { sortTrackerCompanies, type CompanySort } from "@/lib/tracker-sort";
 import { useEffect, useRef, useState } from "react";
 import InlineField, { InlineBusyContext, InlineEditingContext } from "./tracker-inline-field";
 import ContactOutreach from "./tracker-outreach";
@@ -10,11 +11,45 @@ import type { ContactProgress, TrackerCompany, TrackerContact } from "@/lib/trac
 type Contact = TrackerContact & ContactProgress;
 type Company = Omit<TrackerCompany, "contacts"> & { contacts: Contact[] };
 type CompanySummary = Omit<Company, "contacts"> & { contacts: Pick<Contact, "id" | "name" | "status" | "isOverdue">[] };
+type ActivityFilter = "in_progress" | "inactive";
+type StatusFilter = "not_contacted" | "awaiting_response" | "follow_up_due" | "responded" | "closed";
+type TrackerFilters = { activity: ActivityFilter[]; status: StatusFilter[] };
+type FilterOption<T extends string> = { value: T; label: string };
+
+const activityOptions: FilterOption<ActivityFilter>[] = [
+  { value: "in_progress", label: "In progress" },
+  { value: "inactive", label: "Inactive" },
+];
+const statusOptions: FilterOption<StatusFilter>[] = [
+  { value: "not_contacted", label: "Not contacted" },
+  { value: "awaiting_response", label: "Awaiting response" },
+  { value: "follow_up_due", label: "Follow-up due" },
+  { value: "responded", label: "Responded" },
+  { value: "closed", label: "Closed" },
+];
+const sortOptions: FilterOption<CompanySort>[] = [
+  { value: "created_oldest", label: "Created · Oldest first" },
+  { value: "created_newest", label: "Created · Newest first" },
+  { value: "updated_oldest", label: "Updated · Oldest first" },
+  { value: "updated_newest", label: "Updated · Newest first" },
+];
 const labels: Record<ContactProgress["status"], string> = {
   uncontacted: "Uncontacted", awaiting_follow_up_1: "Awaiting first follow-up",
   awaiting_follow_up_2: "Awaiting second follow-up", responded: "Responded",
   completed: "Completed", manual: "Closed manually", restarted: "Restarted",
 };
+
+// Responses keep their own badge; a company is closed only when every contact ended without one.
+function isCompanyClosed(company: CompanySummary): boolean {
+  return company.contacts.length > 0 && company.contacts.every(person =>
+    person.status === "completed" || person.status === "manual" || person.status === "restarted");
+}
+
+// Pending outreach remains in progress even after its follow-up becomes overdue.
+function isCompanyInProgress(company: CompanySummary): boolean {
+  return company.contacts.some(person =>
+    person.status === "awaiting_follow_up_1" || person.status === "awaiting_follow_up_2");
+}
 
 // Surface API messages while retaining drafts after network or persistence failures.
 async function request(url: string, options?: RequestInit) {
@@ -47,6 +82,15 @@ export default function Tracker({ active }: { active: boolean }) {
   const deletingRef = useRef(false);
   const [deleteError, setDeleteError] = useState("");
   const [query, setQuery] = useState("");
+  const [filters, setFilters] = useState<TrackerFilters>({ activity: [], status: [] });
+  const [sort, setSort] = useState<CompanySort>("created_oldest");
+  const [openControl, setOpenControl] = useState<"filter" | "sort" | null>(null);
+  const filterOpen = openControl === "filter";
+  const sortOpen = openControl === "sort";
+  const filterControl = useRef<HTMLDivElement>(null);
+  const filterButton = useRef<HTMLButtonElement>(null);
+  const sortControl = useRef<HTMLDivElement>(null);
+  const sortButton = useRef<HTMLButtonElement>(null);
   const [notice, setNotice] = useState("");
   const addButton = useRef<HTMLButtonElement>(null);
   const loaded = useRef(false);
@@ -54,6 +98,28 @@ export default function Tracker({ active }: { active: boolean }) {
   const revision = useRef(0);
   const refreshController = useRef<AbortController | null>(null);
   const [refreshError, setRefreshError] = useState("");
+
+  useEffect(() => {
+    if (!openControl) return;
+    const control = openControl === "filter" ? filterControl : sortControl;
+    const button = openControl === "filter" ? filterButton : sortButton;
+    function dismissOutside(event: Event) {
+      if (event.target instanceof Node && !control.current?.contains(event.target)) setOpenControl(null);
+    }
+    function dismissOnEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      setOpenControl(null);
+      button.current?.focus();
+    }
+    document.addEventListener("pointerdown", dismissOutside);
+    document.addEventListener("focusin", dismissOutside);
+    document.addEventListener("keydown", dismissOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", dismissOutside);
+      document.removeEventListener("focusin", dismissOutside);
+      document.removeEventListener("keydown", dismissOnEscape);
+    };
+  }, [openControl]);
 
   useEffect(() => {
     if (!active) return;
@@ -107,7 +173,11 @@ export default function Tracker({ active }: { active: boolean }) {
     };
   }, [active, attempt, selectedId]);
 
+  // Merge only server-confirmed saves, including timestamps, without allowing overlapping reads to replace them.
   async function persist(url: string, method: string, values: Record<string, unknown>) {
+    // 1. Invalidate pending reads and hold the write guard.
+    // 2. Save, then merge the confirmed company or remove its deleted tree.
+    // 3. Release the guard on success or failure.
     // Invalidate overlapping reads both before and after persistence.
     writes.current += 1;
     revision.current += 1;
@@ -124,6 +194,7 @@ export default function Tracker({ active }: { active: boolean }) {
       }
       if (!data.company?.id) throw new Error("Unexpected save response. Reload before retrying.");
       const summary: CompanySummary = { id: data.company.id, name: data.company.name, notes: data.company.notes,
+        createdAt: data.company.createdAt, updatedAt: data.company.updatedAt,
         contacts: data.company.contacts.map((person: Contact) => ({ id: person.id, name: person.name, status: person.status, isOverdue: person.isOverdue })) };
       setCompanies(current => current.some(company => company.id === data.companyId)
         ? current.map(company => company.id === data.companyId ? summary : company)
@@ -157,6 +228,7 @@ export default function Tracker({ active }: { active: boolean }) {
     try {
       await save("/api/tracker/companies", "POST", { name: "Untitled company", notes: "" });
       setQuery("");
+      resetFilters();
       setContactId(null);
     } catch (cause) {
       setCreateError(cause instanceof Error ? cause.message : "Could not create company.");
@@ -222,13 +294,89 @@ export default function Tracker({ active }: { active: boolean }) {
   const links = [...new Set((selected?.notes.match(/https?:\/\/[^\s<>"']+/gi) ?? [])
     .map(link => link.replace(/[.,;:!?\])}]+$/, ""))
     .filter(link => URL.canParse(link)))];
-  const visible = companies.filter(company => `${company.name} ${company.notes} ${company.contacts.map(person => person.name).join(" ")}`.toLowerCase().includes(query.trim().toLowerCase()));
+  function resetFilters() {
+    setFilters({ activity: [], status: [] });
+  }
+
+  const filterCount = filters.activity.length + filters.status.length;
+  const visible = sortTrackerCompanies(companies.filter(company => {
+    const matchesSearch = `${company.name} ${company.notes} ${company.contacts.map(person => person.name).join(" ")}`.toLowerCase().includes(query.trim().toLowerCase());
+    const inProgress = isCompanyInProgress(company);
+    const responded = company.contacts.some(person => person.status === "responded");
+    const followUpDue = company.contacts.some(person => person.isOverdue);
+    const closed = isCompanyClosed(company);
+    const activityMatches: Record<ActivityFilter, boolean> = {
+      in_progress: inProgress,
+      inactive: !inProgress && (responded || closed),
+    };
+    const statusMatches: Record<StatusFilter, boolean> = {
+      not_contacted: !inProgress && !responded && !closed,
+      awaiting_response: inProgress && !followUpDue,
+      follow_up_due: followUpDue,
+      responded,
+      closed,
+    };
+    const matchesActivity = filters.activity.length === 0 || filters.activity.some(value => activityMatches[value]);
+    const matchesStatus = filters.status.length === 0 || filters.status.some(value => statusMatches[value]);
+    return matchesSearch && matchesActivity && matchesStatus;
+  }), sort);
 
   return <InlineEditingContext.Provider value={setInlineCount}><InlineBusyContext.Provider value={inlineCount > 0}><main className="tracker-desktop">
     <section className="window tracker-panel applications-panel" aria-labelledby="tracker-title">
       <div className="title-bar workspace-title" id="tracker-title"><div className="title-bar-text">📁 Applications</div></div>
-      <div className="workspace-strip"><strong>All ({companies.length})</strong>
-        <button ref={addButton} disabled={loading || !!error || navigationLocked} onClick={addCompany}>{creatingCompany ? "Creating…" : "+ New"}</button></div>
+      <div className="workspace-strip application-toolbar"><strong>{filterCount ? `Filtered (${visible.length})` : `All (${companies.length})`}</strong>
+        <div className="application-toolbar-actions">
+          <div className="application-filter-control" ref={filterControl}>
+            <button ref={filterButton} type="button" className="application-filter-button" disabled={loading || !!error || navigationLocked}
+              aria-expanded={filterOpen} aria-controls="tracker-filter-popup" onClick={() => setOpenControl(value => value === "filter" ? null : "filter")}>
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M2 2h12L10 8v6l-3-2V8z" /></svg>
+              Filter{filterCount > 0 && ` (${filterCount})`} <span aria-hidden="true">▾</span>
+            </button>
+            {filterOpen && <div id="tracker-filter-popup" className="application-filter-popup">
+              <div className="application-filter-heading"><strong>Filter applications</strong>
+                <button type="button" disabled={navigationLocked || filterCount === 0} onClick={resetFilters}>Reset</button></div>
+              <fieldset disabled={navigationLocked}>
+                <legend>Activity</legend>
+                {activityOptions.map(option => <div className="field-row" key={option.value}>
+                  <input id={`tracker-filter-${option.value}`} type="checkbox" checked={filters.activity.includes(option.value)} onChange={event => {
+                    const checked = event.target.checked;
+                    setFilters(current => ({ ...current, activity: checked ? [...current.activity, option.value] : current.activity.filter(value => value !== option.value) }));
+                  }} />
+                  <label htmlFor={`tracker-filter-${option.value}`}>{option.label}</label>
+                </div>)}
+              </fieldset>
+              <hr className="application-filter-divider" />
+              <fieldset disabled={navigationLocked}>
+                <legend>Status</legend>
+                {statusOptions.map(option => <div className="field-row" key={option.value}>
+                  <input id={`tracker-filter-${option.value}`} type="checkbox" checked={filters.status.includes(option.value)} onChange={event => {
+                    const checked = event.target.checked;
+                    setFilters(current => ({ ...current, status: checked ? [...current.status, option.value] : current.status.filter(value => value !== option.value) }));
+                  }} />
+                  <label htmlFor={`tracker-filter-${option.value}`}>{option.label}</label>
+                </div>)}
+              </fieldset>
+            </div>}
+          </div>
+          <div className="application-filter-control" ref={sortControl}>
+            <button ref={sortButton} type="button" className="application-filter-button" disabled={loading || !!error || navigationLocked}
+              aria-expanded={sortOpen} aria-controls="tracker-sort-popup" title={sortOptions.find(option => option.value === sort)?.label}
+              onClick={() => setOpenControl(value => value === "sort" ? null : "sort")}>
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M2 3h11M2 7h8M2 11h5M12 7v6m-2-2 2 2 2-2" /></svg>
+              Sort <span aria-hidden="true">▾</span>
+            </button>
+            {sortOpen && <div id="tracker-sort-popup" className="application-filter-popup application-sort-popup">
+              <fieldset disabled={navigationLocked}>
+                <legend>Sort applications</legend>
+                {sortOptions.map(option => <div className="field-row" key={option.value}>
+                  <input id={`tracker-sort-${option.value}`} type="radio" name="tracker-company-sort" checked={sort === option.value} onChange={() => setSort(option.value)} />
+                  <label htmlFor={`tracker-sort-${option.value}`}>{option.label}</label>
+                </div>)}
+              </fieldset>
+            </div>}
+          </div>
+          <button ref={addButton} disabled={loading || !!error || navigationLocked} onClick={addCompany}>{creatingCompany ? "Creating…" : "+ New"}</button>
+        </div></div>
       {createError && <p role="alert" className="workspace-alert">{createError}</p>}
       <div className="application-search"><label className="sr-only" htmlFor="tracker-search">Search applications</label>
         <input id="tracker-search" type="search" disabled={inlineCount > 0} placeholder="Search targets or contacts…" value={query} onChange={event => setQuery(event.target.value)} /></div>
@@ -237,8 +385,15 @@ export default function Tracker({ active }: { active: boolean }) {
           {visible.map(company => <button key={company.id} className={`application-row ${selectedId === company.id ? "is-selected" : ""}`}
             disabled={navigationLocked} aria-pressed={selectedId === company.id} onClick={() => { setSelectedId(company.id); setContactId(null); setContactError(""); setNotice(""); }}>
             <strong>{selectedId === company.id && <span className="selection-marker">▸ </span>}{company.name}</strong>
-            <span className={company.contacts.some(person => person.status === "responded") ? "workspace-badge" : "application-meta"}>
-              {company.contacts.some(person => person.status === "responded") ? "Responded" : company.contacts.some(person => person.isOverdue) ? "Follow-up due" : `${company.contacts.length} contacts`}</span>
+            <span className="application-badges">
+              {company.contacts.some(person => person.isOverdue) && <span className="workspace-badge workspace-badge-due">Follow-up due</span>}
+              {company.contacts.some(person => person.status === "responded") && <span className="workspace-badge">Responded</span>}
+              {isCompanyClosed(company) && <span className="workspace-badge workspace-badge-closed">Closed</span>}
+              {isCompanyInProgress(company) && !company.contacts.some(person => person.isOverdue) &&
+                <span className="workspace-badge workspace-badge-in-progress">Awaiting response</span>}
+              {!isCompanyInProgress(company) && !company.contacts.some(person => person.status === "responded") && !isCompanyClosed(company) &&
+                <span className="application-meta">Not contacted</span>}
+            </span>
           </button>)}
           {!visible.length && <p className="workspace-empty">{companies.length ? "No matching applications." : "Add a company to start tracking outreach."}</p>}
         </>}

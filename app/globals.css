@@ -98,6 +98,25 @@ body { background: #4a7596; }
 .tracker-desktop button { font-family: inherit; font-size: 11px; border-radius: 0; }
 .workspace-strip { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 9px; border-bottom: 1px solid #b5b2a5; background: #ece9d8; flex-shrink: 0; }
 .workspace-strip > span { font: 10px monospace; color: #6b7280; }
+.application-toolbar { gap: 4px; flex-wrap: wrap; }
+/* Keep either popup inside the action group when the sidebar becomes narrow. */
+.application-toolbar-actions { position: relative; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; margin-left: auto; max-width: 100%; }
+.application-filter-control { position: static; }
+.tracker-desktop .application-toolbar-actions > button, .tracker-desktop .application-filter-button { min-width: 0; padding: 3px 7px; border: 1px solid #003c74; border-radius: 3px; }
+.application-filter-button { display: flex; align-items: center; gap: 4px; }
+.application-filter-button svg { color: #245edb; }
+.application-filter-button[aria-expanded="true"] { box-shadow: inset 1px 1px 2px #706f6b; }
+.application-filter-popup { position: absolute; right: 0; top: calc(100% + 3px); z-index: 10; width: 182px; max-width: 100%; padding: 7px; background: #ece9d8; border: 2px solid #0055ea; border-radius: 2px; box-shadow: 3px 4px 8px #0004; font-size: 11px; }
+.application-filter-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-bottom: 5px; margin-bottom: 5px; border-bottom: 1px solid #aca899; color: #1e395b; }
+.tracker-desktop .application-filter-heading button { min-width: 0; min-height: 0; padding: 0; border: 0; background: transparent; box-shadow: none; color: #0645ad; text-decoration: underline; }
+.application-filter-heading button:disabled { color: #777; text-decoration: none; }
+.application-filter-popup fieldset { margin: 0; padding: 0; border: 0; background: transparent; }
+.application-filter-popup legend { padding: 3px 4px; color: #1e395b; font-size: 10px; font-weight: bold; }
+.application-filter-divider { margin: 6px 0; border: 0; border-top: 1px solid #aca899; }
+.application-filter-popup .field-row { min-height: 25px; margin: 0; padding: 3px 4px; }
+.application-filter-popup .field-row:hover, .application-filter-popup .field-row:focus-within { background: #dce8fa; }
+.application-filter-popup label { flex: 1; cursor: pointer; }
+.application-sort-popup { width: 190px; }
 .application-search { padding: 6px; border-bottom: 1px solid #d0ccc0; background: #f5f3eb; }
 .application-search input { width: 100%; height: 34px; font: inherit; padding: 6px 8px; }
 .application-list { padding: 5px; flex: 1; overflow: auto; background: white; }
@@ -107,7 +126,11 @@ body { background: #4a7596; }
 .tracker-desktop .is-selected { background: #0a246a; color: white; }
 .is-selected .application-meta { color: #d5e1f9; }
 .selection-marker { color: #f9d82c; }
-.workspace-badge { display: inline-block; background: #009b70; color: white; padding: 2px 5px; font-size: 10px; font-weight: bold; white-space: nowrap; }
+.workspace-badge { display: inline-block; background: #dcfce7; color: #166534; border: 1px solid #86c99b; border-radius: 3px; padding: 2px 5px; font-size: 10px; font-weight: bold; white-space: nowrap; }
+.application-badges { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.workspace-badge-due { background: #fff3d6; color: #925400; border: 1px solid #e6ad3c; border-radius: 3px; }
+.workspace-badge-closed { background: #e5e7eb; color: #374151; border: 1px solid #9ca3af; border-radius: 3px; }
+.workspace-badge-in-progress { background: #dbeafe; color: #1e40af; border-color: #93b4e8; }
 .workspace-footer { padding: 5px 8px; color: #69707b; font-size: 10px; border-top: 1px solid #d0ccc0; }
 .company-heading { background: #f5f3eb; padding: 12px; }
 .company-heading-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }

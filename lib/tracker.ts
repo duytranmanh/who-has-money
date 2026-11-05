@@ -10,7 +10,10 @@ export type TrackerSequence = {
 };
 // Sequences are appended in creation order, independent of backdated sent timestamps.
 export type TrackerContact = { id: string; name: string; email: string; links: string[]; sequences: TrackerSequence[] };
-export type TrackerCompany = { id: string; name: string; notes: string; contacts: TrackerContact[] };
+export type TrackerCompany = {
+  id: string; name: string; notes: string; contacts: TrackerContact[];
+  createdAt: string | null; updatedAt: string | null;
+};
 export type TrackerData = { companies: TrackerCompany[] };
 export type MessageInput = { text: string; sentAt: string; notes?: string };
 export type ContactInput = { name: string; email?: string; links?: string[] };
@@ -55,9 +58,10 @@ function timestamp(value: unknown, now: Date): string {
   return new Date(time).toISOString();
 }
 
-// Create an empty tracker company with an independent stable ID.
-export function createCompany(input: CompanyInput): TrackerCompany {
-  return { id: crypto.randomUUID(), name: requiredText(input.name, "Name"), notes: optionalText(input.notes, "Notes"), contacts: [] };
+// Create an empty company with a stable ID and server timestamps; imported dates may remain unknown.
+export function createCompany(input: CompanyInput, now = new Date()): TrackerCompany {
+  return { id: crypto.randomUUID(), name: requiredText(input.name, "Name"), notes: optionalText(input.notes, "Notes"), contacts: [],
+    createdAt: now.toISOString(), updatedAt: now.toISOString() };
 }
 
 // Validate supplied company fields while preserving contacts and identity.

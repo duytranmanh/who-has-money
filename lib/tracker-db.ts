@@ -40,27 +40,54 @@ const schema = `
   ) STRICT;
 `;
 
-// Initialize schema atomically. Callers own closing the returned server-side connection.
+type Migration = { version: number; name: string; up: (db: DatabaseSync) => void };
+
+// Append consecutive versions; applied migrations must stay unchanged for older databases.
+// The opener owns the transaction and version updates, so migrations only perform schema/data changes.
+const migrations: Migration[] = [
+  { version: 1, name: "Create tracker tables", up: db => { db.exec(schema); } },
+  { version: 2, name: "Add tracker metadata", up: db => {
+    db.exec(`CREATE TABLE tracker_metadata (
+      key TEXT PRIMARY KEY NOT NULL,
+      value TEXT NOT NULL
+    ) STRICT;`);
+  } },
+  { version: 3, name: "Add company timestamps", up: db => {
+    // 1. Add timestamp columns without defaults for future inserts.
+    // 2. Backfill synthetic dates in existing company order within the opener's transaction.
+    // Historical creation and edit times cannot be reconstructed from outreach timestamps.
+    db.exec(`ALTER TABLE companies ADD COLUMN created_at TEXT;
+      ALTER TABLE companies ADD COLUMN updated_at TEXT;`);
+    const baseline = Date.now() - 10 * 24 * 60 * 60 * 1000;
+    const companies = db.prepare("SELECT id FROM companies ORDER BY position, rowid").all();
+    const update = db.prepare("UPDATE companies SET created_at = ?, updated_at = ? WHERE id = ?");
+    companies.forEach((company, index) => {
+      const at = new Date(baseline + index * 60 * 1000).toISOString();
+      update.run(at, at, company.id);
+    });
+  } },
+];
+
+// Open and upgrade the database atomically; reject newer schemas and close on failure.
+// Callers own closing a successfully returned connection.
 export function openTrackerDatabase(filePath: string): DatabaseSync {
+  // 1. Open the connection and configure SQLite.
+  // 2. Lock the database and check schema compatibility.
+  // 3. Apply pending migrations and commit; roll back and close on failure.
   if (filePath !== ":memory:") mkdirSync(dirname(resolve(filePath)), { recursive: true });
   const db = new DatabaseSync(filePath);
   try {
     db.exec("PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
     // Acquire the write lock before checking the version so concurrent openers cannot both migrate.
     db.exec("BEGIN IMMEDIATE;");
-    const version = db.prepare("PRAGMA user_version").get()!.user_version;
-    if (version === 0) {
-      db.exec(schema);
-      db.exec("PRAGMA user_version = 1;");
-    } else if (version !== 1 && version !== 2) {
+    const version = Number(db.prepare("PRAGMA user_version").get()!.user_version);
+    if (version < 0 || version > migrations.at(-1)!.version) {
       throw new Error(`Unsupported tracker database schema version: ${version}.`);
     }
-    if (version === 0 || version === 1) {
-      db.exec(`CREATE TABLE tracker_metadata (
-        key TEXT PRIMARY KEY NOT NULL,
-        value TEXT NOT NULL
-      ) STRICT;
-      PRAGMA user_version = 2;`);
+    for (const migration of migrations) {
+      if (migration.version <= version) continue;
+      migration.up(db);
+      db.exec(`PRAGMA user_version = ${migration.version};`);
     }
     db.exec("COMMIT;");
     return db;

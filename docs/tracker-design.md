@@ -196,7 +196,41 @@ Selecting a company fetches that company's full details. The legacy full-tracker
 endpoint remains available for compatibility.
 
 `data/tracker.json` is a backup only and is no longer read or written by the app.
-Existing imported schema version 2 databases remain supported. To back up SQLite,
+Existing imported schema version 2 databases upgrade automatically to version 3. To back up SQLite,
 stop the app, then copy `data/tracker.sqlite` to a separate backup file before restarting.
+
+Schema migrations live in the ordered `migrations` list in `lib/tracker-db.ts`.
+Append the next consecutive version with a descriptive name and synchronous `up(db)`
+function; leave applied migrations unchanged. On the first tracker database access
+after an app restart, the opener reads `PRAGMA user_version` under a write lock and
+runs all missing migrations in order. The opener updates the version after each
+migration and commits the entire upgrade together; any failure rolls back all pending
+migrations and their version updates. Migration functions must not manage transactions
+or set `user_version` themselves. Databases newer than the app supports are rejected.
+No separate migration command or history table is required.
+
+Version 3 adds nullable `created_at` and `updated_at` columns without column defaults.
+Existing companies receive synthetic timestamps for sorting: the first starts ten
+elapsed days before migration time, and each subsequent company is one minute later,
+ordered by `position` with `rowid` breaking ties. Both timestamps start at the same
+value. These dates represent existing company order, not actual creation/edit history.
+The backfill runs once as part of the migration transaction and is not repeated on
+reopen. New companies receive both timestamps from the server clock.
+Each successful API save, including contact deletion and backdated outreach edits,
+updates the owning company's `updated_at` in the same transaction. Saving unchanged
+values also counts as a save. Reads do not change timestamps; failed saves roll them
+back with the resource changes. Company deletion removes the row without a timestamp
+update. Storage CRUD methods do not touch timestamps implicitly; API orchestration owns
+that step. Company summaries, details, and save responses expose `createdAt` and
+`updatedAt` as UTC ISO strings or `null`. Clients cannot set either field.
+
+The Applications toolbar sorts the filtered/search-matched company summaries locally
+by creation or update time, oldest or newest first. Creation time, oldest first, is
+the default to preserve the existing company order after backfill. Ties retain the
+server's creation order, and unknown timestamps stay last in either direction.
+Confirmed saves and background refreshes use the current sort selection. Sorting
+does not change saved company positions or the selected company, and resetting
+filters does not reset sorting. The sort selection lasts for the mounted tracker
+session; it is not persisted across page reloads.
 
 Naming: `<feature>-api.ts` for HTTP helpers, `<feature>.ts` for logic, and `<feature>-storage.ts` for persistence. Tests live beside each file as `<name>.test.ts`. Next.js endpoints use `route.ts`.

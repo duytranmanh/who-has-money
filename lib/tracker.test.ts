@@ -26,6 +26,13 @@ function expectError(run: () => unknown, code: TrackerError["code"]) {
 }
 
 describe("tracker records", () => {
+  it("sets creation metadata using the supplied server clock and preserves it through edits", () => {
+    const now = new Date("2026-11-01T12:00:00.000Z");
+    const company = createCompany({ name: fixture.companies[0].name }, now);
+    expect(company).toMatchObject({ createdAt: now.toISOString(), updatedAt: now.toISOString() });
+    expect(updateCompany(company, { notes: "Edited" })).toMatchObject({ createdAt: now.toISOString(), updatedAt: now.toISOString() });
+  });
+
   it("creates independent records using a Discovery company name", () => {
     const company = createCompany({ name: fixture.companies[0].name });
     expect(company.contacts).toEqual([]);

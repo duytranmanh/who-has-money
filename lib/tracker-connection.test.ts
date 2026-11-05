@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { openTrackerDatabase } from "./tracker-db";
+import { createCompany } from "./tracker";
 
 const state = vi.hoisted(() => ({ path: "" }));
 vi.mock("./tracker-db", async importOriginal => {
@@ -27,7 +28,7 @@ afterEach(() => {
 it("opens lazily and reuses the same connection across requests and module reloads", async () => {
   const { withTrackerStore } = await import("./tracker-storage");
   expect(openTrackerDatabase).not.toHaveBeenCalled();
-  withTrackerStore(store => store.insertCompany({ id: "company", name: "Example", notes: "" }));
+  withTrackerStore(store => store.insertCompany({ ...createCompany({ name: "Example" }), id: "company" }));
   const connection = trackerGlobal.trackerDatabase!;
   expect(connection.isOpen).toBe(true);
   expect(withTrackerStore(store => store.getCompany("company")!.name)).toBe("Example");
@@ -41,12 +42,12 @@ it("opens lazily and reuses the same connection across requests and module reloa
 it("rolls back failed transactions and keeps the connection usable", async () => {
   const { withTrackerStore } = await import("./tracker-storage");
   expect(() => withTrackerStore(store => store.transaction(() => {
-    store.insertCompany({ id: "failed", name: "Rollback", notes: "" });
+    store.insertCompany({ ...createCompany({ name: "Rollback" }), id: "failed" });
     throw new Error("Failed operation");
   }))).toThrow("Failed operation");
   expect(trackerGlobal.trackerDatabase!.isOpen).toBe(true);
   expect(trackerGlobal.trackerDatabase!.isTransaction).toBe(false);
   expect(withTrackerStore(store => store.listCompanies())).toEqual([]);
-  withTrackerStore(store => store.transaction(() => store.insertCompany({ id: "saved", name: "Saved", notes: "" })));
+  withTrackerStore(store => store.transaction(() => store.insertCompany({ ...createCompany({ name: "Saved" }), id: "saved" })));
   expect(openTrackerDatabase).toHaveBeenCalledTimes(1);
 });

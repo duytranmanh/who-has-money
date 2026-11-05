@@ -16,6 +16,18 @@ const labels: Record<ContactProgress["status"], string> = {
   completed: "Completed", manual: "Closed manually", restarted: "Restarted",
 };
 
+// Responses keep their own badge; a company is closed only when every contact ended without one.
+function isCompanyClosed(company: CompanySummary): boolean {
+  return company.contacts.length > 0 && company.contacts.every(person =>
+    person.status === "completed" || person.status === "manual" || person.status === "restarted");
+}
+
+// Pending outreach remains in progress even after its follow-up becomes overdue.
+function isCompanyInProgress(company: CompanySummary): boolean {
+  return company.contacts.some(person =>
+    person.status === "awaiting_follow_up_1" || person.status === "awaiting_follow_up_2");
+}
+
 // Surface API messages while retaining drafts after network or persistence failures.
 async function request(url: string, options?: RequestInit) {
   const response = await fetch(url, { cache: "no-store", ...options });
@@ -49,6 +61,11 @@ export default function Tracker({ active }: { active: boolean }) {
   const [query, setQuery] = useState("");
   const [respondedOnly, setRespondedOnly] = useState(false);
   const [followUpDueOnly, setFollowUpDueOnly] = useState(false);
+  const [closedOnly, setClosedOnly] = useState(false);
+  const [inProgressOnly, setInProgressOnly] = useState(false);
+  const [inactiveOnly, setInactiveOnly] = useState(false);
+  const [notContactedOnly, setNotContactedOnly] = useState(false);
+  const [awaitingResponseOnly, setAwaitingResponseOnly] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
   const filterControl = useRef<HTMLDivElement>(null);
   const filterButton = useRef<HTMLButtonElement>(null);
@@ -182,8 +199,7 @@ export default function Tracker({ active }: { active: boolean }) {
     try {
       await save("/api/tracker/companies", "POST", { name: "Untitled company", notes: "" });
       setQuery("");
-      setRespondedOnly(false);
-      setFollowUpDueOnly(false);
+      resetFilters();
       setContactId(null);
     } catch (cause) {
       setCreateError(cause instanceof Error ? cause.message : "Could not create company.");
@@ -249,12 +265,32 @@ export default function Tracker({ active }: { active: boolean }) {
   const links = [...new Set((selected?.notes.match(/https?:\/\/[^\s<>"']+/gi) ?? [])
     .map(link => link.replace(/[.,;:!?\])}]+$/, ""))
     .filter(link => URL.canParse(link)))];
-  const filterCount = Number(respondedOnly) + Number(followUpDueOnly);
+  function resetFilters() {
+    setRespondedOnly(false);
+    setFollowUpDueOnly(false);
+    setClosedOnly(false);
+    setInProgressOnly(false);
+    setInactiveOnly(false);
+    setNotContactedOnly(false);
+    setAwaitingResponseOnly(false);
+  }
+
+  const activityFilterCount = Number(inProgressOnly) + Number(inactiveOnly);
+  const statusFilterCount = Number(respondedOnly) + Number(followUpDueOnly) + Number(closedOnly) + Number(notContactedOnly) + Number(awaitingResponseOnly);
+  const filterCount = activityFilterCount + statusFilterCount;
   const visible = companies.filter(company => {
     const matchesSearch = `${company.name} ${company.notes} ${company.contacts.map(person => person.name).join(" ")}`.toLowerCase().includes(query.trim().toLowerCase());
-    const matchesStatus = filterCount === 0 || company.contacts.some(person =>
-      (respondedOnly && person.status === "responded") || (followUpDueOnly && person.isOverdue));
-    return matchesSearch && matchesStatus;
+    const inProgress = isCompanyInProgress(company);
+    const responded = company.contacts.some(person => person.status === "responded");
+    const followUpDue = company.contacts.some(person => person.isOverdue);
+    const closed = isCompanyClosed(company);
+    const notContacted = !inProgress && !responded && !closed;
+    const matchesActivity = activityFilterCount === 0 || (inProgressOnly && inProgress) ||
+      (inactiveOnly && !inProgress && (responded || closed));
+    const matchesStatus = statusFilterCount === 0 || (respondedOnly && responded) ||
+      (followUpDueOnly && followUpDue) || (closedOnly && closed) ||
+      (notContactedOnly && notContacted) || (awaitingResponseOnly && inProgress && !followUpDue);
+    return matchesSearch && matchesActivity && matchesStatus;
   });
 
   return <InlineEditingContext.Provider value={setInlineCount}><InlineBusyContext.Provider value={inlineCount > 0}><main className="tracker-desktop">
@@ -269,13 +305,28 @@ export default function Tracker({ active }: { active: boolean }) {
               Filter{filterCount > 0 && ` (${filterCount})`} <span aria-hidden="true">▾</span>
             </button>
             {filterOpen && <div id="tracker-filter-popup" className="application-filter-popup">
-              <div className="application-filter-heading"><strong id="tracker-filter-heading">Filter by Status</strong>
-                <button type="button" disabled={navigationLocked || filterCount === 0} onClick={() => { setRespondedOnly(false); setFollowUpDueOnly(false); }}>Reset</button></div>
-              <fieldset disabled={navigationLocked} aria-labelledby="tracker-filter-heading">
-                <div className="field-row"><input id="tracker-filter-responded" type="checkbox" checked={respondedOnly} onChange={event => setRespondedOnly(event.target.checked)} />
-                  <label htmlFor="tracker-filter-responded">Responded</label></div>
+              <div className="application-filter-heading"><strong>Filter applications</strong>
+                <button type="button" disabled={navigationLocked || filterCount === 0} onClick={resetFilters}>Reset</button></div>
+              <fieldset disabled={navigationLocked}>
+                <legend>Activity</legend>
+                <div className="field-row"><input id="tracker-filter-in-progress" type="checkbox" checked={inProgressOnly} onChange={event => setInProgressOnly(event.target.checked)} />
+                  <label htmlFor="tracker-filter-in-progress">In progress</label></div>
+                <div className="field-row"><input id="tracker-filter-inactive" type="checkbox" checked={inactiveOnly} onChange={event => setInactiveOnly(event.target.checked)} />
+                  <label htmlFor="tracker-filter-inactive">Inactive</label></div>
+              </fieldset>
+              <hr className="application-filter-divider" />
+              <fieldset disabled={navigationLocked}>
+                <legend>Status</legend>
+                <div className="field-row"><input id="tracker-filter-not-contacted" type="checkbox" checked={notContactedOnly} onChange={event => setNotContactedOnly(event.target.checked)} />
+                  <label htmlFor="tracker-filter-not-contacted">Not contacted</label></div>
+                <div className="field-row"><input id="tracker-filter-awaiting-response" type="checkbox" checked={awaitingResponseOnly} onChange={event => setAwaitingResponseOnly(event.target.checked)} />
+                  <label htmlFor="tracker-filter-awaiting-response">Awaiting response</label></div>
                 <div className="field-row"><input id="tracker-filter-due" type="checkbox" checked={followUpDueOnly} onChange={event => setFollowUpDueOnly(event.target.checked)} />
                   <label htmlFor="tracker-filter-due">Follow-up due</label></div>
+                <div className="field-row"><input id="tracker-filter-responded" type="checkbox" checked={respondedOnly} onChange={event => setRespondedOnly(event.target.checked)} />
+                  <label htmlFor="tracker-filter-responded">Responded</label></div>
+                <div className="field-row"><input id="tracker-filter-closed" type="checkbox" checked={closedOnly} onChange={event => setClosedOnly(event.target.checked)} />
+                  <label htmlFor="tracker-filter-closed">Closed</label></div>
               </fieldset>
             </div>}
           </div>
@@ -289,8 +340,15 @@ export default function Tracker({ active }: { active: boolean }) {
           {visible.map(company => <button key={company.id} className={`application-row ${selectedId === company.id ? "is-selected" : ""}`}
             disabled={navigationLocked} aria-pressed={selectedId === company.id} onClick={() => { setSelectedId(company.id); setContactId(null); setContactError(""); setNotice(""); }}>
             <strong>{selectedId === company.id && <span className="selection-marker">▸ </span>}{company.name}</strong>
-            <span className={company.contacts.some(person => person.status === "responded") ? "workspace-badge" : "application-meta"}>
-              {company.contacts.some(person => person.status === "responded") ? "Responded" : company.contacts.some(person => person.isOverdue) ? "Follow-up due" : `${company.contacts.length} contacts`}</span>
+            <span className="application-badges">
+              {company.contacts.some(person => person.isOverdue) && <span className="workspace-badge workspace-badge-due">Follow-up due</span>}
+              {company.contacts.some(person => person.status === "responded") && <span className="workspace-badge">Responded</span>}
+              {isCompanyClosed(company) && <span className="workspace-badge workspace-badge-closed">Closed</span>}
+              {isCompanyInProgress(company) && !company.contacts.some(person => person.isOverdue) &&
+                <span className="workspace-badge workspace-badge-in-progress">Awaiting response</span>}
+              {!isCompanyInProgress(company) && !company.contacts.some(person => person.status === "responded") && !isCompanyClosed(company) &&
+                <span className="application-meta">Not contacted</span>}
+            </span>
           </button>)}
           {!visible.length && <p className="workspace-empty">{companies.length ? "No matching applications." : "Add a company to start tracking outreach."}</p>}
         </>}

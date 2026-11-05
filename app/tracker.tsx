@@ -47,6 +47,11 @@ export default function Tracker({ active }: { active: boolean }) {
   const deletingRef = useRef(false);
   const [deleteError, setDeleteError] = useState("");
   const [query, setQuery] = useState("");
+  const [respondedOnly, setRespondedOnly] = useState(false);
+  const [followUpDueOnly, setFollowUpDueOnly] = useState(false);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const filterControl = useRef<HTMLDivElement>(null);
+  const filterButton = useRef<HTMLButtonElement>(null);
   const [notice, setNotice] = useState("");
   const addButton = useRef<HTMLButtonElement>(null);
   const loaded = useRef(false);
@@ -54,6 +59,26 @@ export default function Tracker({ active }: { active: boolean }) {
   const revision = useRef(0);
   const refreshController = useRef<AbortController | null>(null);
   const [refreshError, setRefreshError] = useState("");
+
+  useEffect(() => {
+    if (!filterOpen) return;
+    function dismissOutside(event: Event) {
+      if (event.target instanceof Node && !filterControl.current?.contains(event.target)) setFilterOpen(false);
+    }
+    function dismissOnEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      setFilterOpen(false);
+      filterButton.current?.focus();
+    }
+    document.addEventListener("pointerdown", dismissOutside);
+    document.addEventListener("focusin", dismissOutside);
+    document.addEventListener("keydown", dismissOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", dismissOutside);
+      document.removeEventListener("focusin", dismissOutside);
+      document.removeEventListener("keydown", dismissOnEscape);
+    };
+  }, [filterOpen]);
 
   useEffect(() => {
     if (!active) return;
@@ -157,6 +182,8 @@ export default function Tracker({ active }: { active: boolean }) {
     try {
       await save("/api/tracker/companies", "POST", { name: "Untitled company", notes: "" });
       setQuery("");
+      setRespondedOnly(false);
+      setFollowUpDueOnly(false);
       setContactId(null);
     } catch (cause) {
       setCreateError(cause instanceof Error ? cause.message : "Could not create company.");
@@ -222,13 +249,38 @@ export default function Tracker({ active }: { active: boolean }) {
   const links = [...new Set((selected?.notes.match(/https?:\/\/[^\s<>"']+/gi) ?? [])
     .map(link => link.replace(/[.,;:!?\])}]+$/, ""))
     .filter(link => URL.canParse(link)))];
-  const visible = companies.filter(company => `${company.name} ${company.notes} ${company.contacts.map(person => person.name).join(" ")}`.toLowerCase().includes(query.trim().toLowerCase()));
+  const filterCount = Number(respondedOnly) + Number(followUpDueOnly);
+  const visible = companies.filter(company => {
+    const matchesSearch = `${company.name} ${company.notes} ${company.contacts.map(person => person.name).join(" ")}`.toLowerCase().includes(query.trim().toLowerCase());
+    const matchesStatus = filterCount === 0 || company.contacts.some(person =>
+      (respondedOnly && person.status === "responded") || (followUpDueOnly && person.isOverdue));
+    return matchesSearch && matchesStatus;
+  });
 
   return <InlineEditingContext.Provider value={setInlineCount}><InlineBusyContext.Provider value={inlineCount > 0}><main className="tracker-desktop">
     <section className="window tracker-panel applications-panel" aria-labelledby="tracker-title">
       <div className="title-bar workspace-title" id="tracker-title"><div className="title-bar-text">📁 Applications</div></div>
-      <div className="workspace-strip"><strong>All ({companies.length})</strong>
-        <button ref={addButton} disabled={loading || !!error || navigationLocked} onClick={addCompany}>{creatingCompany ? "Creating…" : "+ New"}</button></div>
+      <div className="workspace-strip application-toolbar"><strong>{filterCount ? `Filtered (${visible.length})` : `All (${companies.length})`}</strong>
+        <div className="application-toolbar-actions">
+          <div className="application-filter-control" ref={filterControl}>
+            <button ref={filterButton} type="button" className="application-filter-button" disabled={loading || !!error || navigationLocked}
+              aria-expanded={filterOpen} aria-controls="tracker-filter-popup" onClick={() => setFilterOpen(value => !value)}>
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M2 2h12L10 8v6l-3-2V8z" /></svg>
+              Filter{filterCount > 0 && ` (${filterCount})`} <span aria-hidden="true">▾</span>
+            </button>
+            {filterOpen && <div id="tracker-filter-popup" className="application-filter-popup">
+              <div className="application-filter-heading"><strong id="tracker-filter-heading">Filter by Status</strong>
+                <button type="button" disabled={navigationLocked || filterCount === 0} onClick={() => { setRespondedOnly(false); setFollowUpDueOnly(false); }}>Reset</button></div>
+              <fieldset disabled={navigationLocked} aria-labelledby="tracker-filter-heading">
+                <div className="field-row"><input id="tracker-filter-responded" type="checkbox" checked={respondedOnly} onChange={event => setRespondedOnly(event.target.checked)} />
+                  <label htmlFor="tracker-filter-responded">Responded</label></div>
+                <div className="field-row"><input id="tracker-filter-due" type="checkbox" checked={followUpDueOnly} onChange={event => setFollowUpDueOnly(event.target.checked)} />
+                  <label htmlFor="tracker-filter-due">Follow-up due</label></div>
+              </fieldset>
+            </div>}
+          </div>
+          <button ref={addButton} disabled={loading || !!error || navigationLocked} onClick={addCompany}>{creatingCompany ? "Creating…" : "+ New"}</button>
+        </div></div>
       {createError && <p role="alert" className="workspace-alert">{createError}</p>}
       <div className="application-search"><label className="sr-only" htmlFor="tracker-search">Search applications</label>
         <input id="tracker-search" type="search" disabled={inlineCount > 0} placeholder="Search targets or contacts…" value={query} onChange={event => setQuery(event.target.value)} /></div>

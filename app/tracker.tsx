@@ -1,6 +1,7 @@
 "use client";
 
 import { formatDateTime } from "@/lib/date-time";
+import { sortTrackerCompanies, type CompanySort } from "@/lib/tracker-sort";
 import { useEffect, useRef, useState } from "react";
 import InlineField, { InlineBusyContext, InlineEditingContext } from "./tracker-inline-field";
 import ContactOutreach from "./tracker-outreach";
@@ -25,6 +26,12 @@ const statusOptions: FilterOption<StatusFilter>[] = [
   { value: "follow_up_due", label: "Follow-up due" },
   { value: "responded", label: "Responded" },
   { value: "closed", label: "Closed" },
+];
+const sortOptions: FilterOption<CompanySort>[] = [
+  { value: "created_oldest", label: "Created · Oldest first" },
+  { value: "created_newest", label: "Created · Newest first" },
+  { value: "updated_oldest", label: "Updated · Oldest first" },
+  { value: "updated_newest", label: "Updated · Newest first" },
 ];
 const labels: Record<ContactProgress["status"], string> = {
   uncontacted: "Uncontacted", awaiting_follow_up_1: "Awaiting first follow-up",
@@ -76,9 +83,14 @@ export default function Tracker({ active }: { active: boolean }) {
   const [deleteError, setDeleteError] = useState("");
   const [query, setQuery] = useState("");
   const [filters, setFilters] = useState<TrackerFilters>({ activity: [], status: [] });
-  const [filterOpen, setFilterOpen] = useState(false);
+  const [sort, setSort] = useState<CompanySort>("created_oldest");
+  const [openControl, setOpenControl] = useState<"filter" | "sort" | null>(null);
+  const filterOpen = openControl === "filter";
+  const sortOpen = openControl === "sort";
   const filterControl = useRef<HTMLDivElement>(null);
   const filterButton = useRef<HTMLButtonElement>(null);
+  const sortControl = useRef<HTMLDivElement>(null);
+  const sortButton = useRef<HTMLButtonElement>(null);
   const [notice, setNotice] = useState("");
   const addButton = useRef<HTMLButtonElement>(null);
   const loaded = useRef(false);
@@ -88,14 +100,16 @@ export default function Tracker({ active }: { active: boolean }) {
   const [refreshError, setRefreshError] = useState("");
 
   useEffect(() => {
-    if (!filterOpen) return;
+    if (!openControl) return;
+    const control = openControl === "filter" ? filterControl : sortControl;
+    const button = openControl === "filter" ? filterButton : sortButton;
     function dismissOutside(event: Event) {
-      if (event.target instanceof Node && !filterControl.current?.contains(event.target)) setFilterOpen(false);
+      if (event.target instanceof Node && !control.current?.contains(event.target)) setOpenControl(null);
     }
     function dismissOnEscape(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
-      setFilterOpen(false);
-      filterButton.current?.focus();
+      setOpenControl(null);
+      button.current?.focus();
     }
     document.addEventListener("pointerdown", dismissOutside);
     document.addEventListener("focusin", dismissOutside);
@@ -105,7 +119,7 @@ export default function Tracker({ active }: { active: boolean }) {
       document.removeEventListener("focusin", dismissOutside);
       document.removeEventListener("keydown", dismissOnEscape);
     };
-  }, [filterOpen]);
+  }, [openControl]);
 
   useEffect(() => {
     if (!active) return;
@@ -285,7 +299,7 @@ export default function Tracker({ active }: { active: boolean }) {
   }
 
   const filterCount = filters.activity.length + filters.status.length;
-  const visible = companies.filter(company => {
+  const visible = sortTrackerCompanies(companies.filter(company => {
     const matchesSearch = `${company.name} ${company.notes} ${company.contacts.map(person => person.name).join(" ")}`.toLowerCase().includes(query.trim().toLowerCase());
     const inProgress = isCompanyInProgress(company);
     const responded = company.contacts.some(person => person.status === "responded");
@@ -305,7 +319,7 @@ export default function Tracker({ active }: { active: boolean }) {
     const matchesActivity = filters.activity.length === 0 || filters.activity.some(value => activityMatches[value]);
     const matchesStatus = filters.status.length === 0 || filters.status.some(value => statusMatches[value]);
     return matchesSearch && matchesActivity && matchesStatus;
-  });
+  }), sort);
 
   return <InlineEditingContext.Provider value={setInlineCount}><InlineBusyContext.Provider value={inlineCount > 0}><main className="tracker-desktop">
     <section className="window tracker-panel applications-panel" aria-labelledby="tracker-title">
@@ -314,7 +328,7 @@ export default function Tracker({ active }: { active: boolean }) {
         <div className="application-toolbar-actions">
           <div className="application-filter-control" ref={filterControl}>
             <button ref={filterButton} type="button" className="application-filter-button" disabled={loading || !!error || navigationLocked}
-              aria-expanded={filterOpen} aria-controls="tracker-filter-popup" onClick={() => setFilterOpen(value => !value)}>
+              aria-expanded={filterOpen} aria-controls="tracker-filter-popup" onClick={() => setOpenControl(value => value === "filter" ? null : "filter")}>
               <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M2 2h12L10 8v6l-3-2V8z" /></svg>
               Filter{filterCount > 0 && ` (${filterCount})`} <span aria-hidden="true">▾</span>
             </button>
@@ -340,6 +354,23 @@ export default function Tracker({ active }: { active: boolean }) {
                     setFilters(current => ({ ...current, status: checked ? [...current.status, option.value] : current.status.filter(value => value !== option.value) }));
                   }} />
                   <label htmlFor={`tracker-filter-${option.value}`}>{option.label}</label>
+                </div>)}
+              </fieldset>
+            </div>}
+          </div>
+          <div className="application-filter-control" ref={sortControl}>
+            <button ref={sortButton} type="button" className="application-filter-button" disabled={loading || !!error || navigationLocked}
+              aria-expanded={sortOpen} aria-controls="tracker-sort-popup" title={sortOptions.find(option => option.value === sort)?.label}
+              onClick={() => setOpenControl(value => value === "sort" ? null : "sort")}>
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M2 3h11M2 7h8M2 11h5M12 7v6m-2-2 2 2 2-2" /></svg>
+              Sort <span aria-hidden="true">▾</span>
+            </button>
+            {sortOpen && <div id="tracker-sort-popup" className="application-filter-popup application-sort-popup">
+              <fieldset disabled={navigationLocked}>
+                <legend>Sort applications</legend>
+                {sortOptions.map(option => <div className="field-row" key={option.value}>
+                  <input id={`tracker-sort-${option.value}`} type="radio" name="tracker-company-sort" checked={sort === option.value} onChange={() => setSort(option.value)} />
+                  <label htmlFor={`tracker-sort-${option.value}`}>{option.label}</label>
                 </div>)}
               </fieldset>
             </div>}

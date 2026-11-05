@@ -224,4 +224,13 @@ update. Storage CRUD methods do not touch timestamps implicitly; API orchestrati
 that step. Company summaries, details, and save responses expose `createdAt` and
 `updatedAt` as UTC ISO strings or `null`. Clients cannot set either field.
 
+The Applications toolbar sorts the filtered/search-matched company summaries locally
+by creation or update time, oldest or newest first. Creation time, oldest first, is
+the default to preserve the existing company order after backfill. Ties retain the
+server's creation order, and unknown timestamps stay last in either direction.
+Confirmed saves and background refreshes use the current sort selection. Sorting
+does not change saved company positions or the selected company, and resetting
+filters does not reset sorting. The sort selection lasts for the mounted tracker
+session; it is not persisted across page reloads.
+
 Naming: `<feature>-api.ts` for HTTP helpers, `<feature>.ts` for logic, and `<feature>-storage.ts` for persistence. Tests live beside each file as `<name>.test.ts`. Next.js endpoints use `route.ts`.

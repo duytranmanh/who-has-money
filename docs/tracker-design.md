@@ -209,9 +209,13 @@ migrations and their version updates. Migration functions must not manage transa
 or set `user_version` themselves. Databases newer than the app supports are rejected.
 No separate migration command or history table is required.
 
-Version 3 adds nullable `created_at` and `updated_at` columns to companies. Existing
-rows retain `NULL` timestamps because outreach dates do not establish when records
-were created or edited. New companies receive both timestamps from the server clock.
+Version 3 adds nullable `created_at` and `updated_at` columns without column defaults.
+Existing companies receive synthetic timestamps for sorting: the first starts ten
+elapsed days before migration time, and each subsequent company is one minute later,
+ordered by `position` with `rowid` breaking ties. Both timestamps start at the same
+value. These dates represent existing company order, not actual creation/edit history.
+The backfill runs once as part of the migration transaction and is not repeated on
+reopen. New companies receive both timestamps from the server clock.
 Each successful API save, including contact deletion and backdated outreach edits,
 updates the owning company's `updated_at` in the same transaction. Saving unchanged
 values also counts as a save. Reads do not change timestamps; failed saves roll them

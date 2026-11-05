@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { openTrackerDatabase } from "./tracker-db";
 
 let directory: string;
@@ -13,6 +13,7 @@ beforeEach(() => {
   path = join(directory, "nested", "tracker.sqlite");
 });
 afterEach(() => {
+  vi.useRealTimers();
   for (const db of connections.splice(0)) if (db.isOpen) db.close();
   rmSync(directory, { recursive: true, force: true });
 });
@@ -66,10 +67,11 @@ it("upgrades a version one database without changing tracker rows", () => {
   expect(upgraded.prepare("PRAGMA user_version").get()).toMatchObject({ user_version: 3 });
   expect(upgraded.prepare("SELECT * FROM tracker_metadata").all()).toEqual([]);
   expect(upgraded.prepare("SELECT * FROM companies").get())
-    .toMatchObject({ id: "old", name: "Existing", notes: "Keep notes", position: 0, created_at: null, updated_at: null });
+    .toMatchObject({ id: "old", name: "Existing", notes: "Keep notes", position: 0,
+      created_at: expect.any(String), updated_at: expect.any(String) });
 });
 
-it("upgrades version two data without guessing historical timestamps or changing outreach", () => {
+it("upgrades version two data with synthetic timestamps without changing outreach", () => {
   const db = openLegacy(2);
   db.exec(`INSERT INTO companies VALUES ('old', 'Existing', 'Keep notes', 0);
     INSERT INTO contacts VALUES ('p', 'old', 'Alex', 'alex@example.com', '["https://example.com"]', 0);
@@ -82,12 +84,37 @@ it("upgrades version two data without guessing historical timestamps or changing
   const reopened = open();
   expect(reopened.prepare("PRAGMA user_version").get()).toMatchObject({ user_version: 3 });
   expect(reopened.prepare("SELECT * FROM companies").get())
-    .toMatchObject({ id: "old", name: "Existing", notes: "Keep notes", position: 0, created_at: null, updated_at: null });
+    .toMatchObject({ id: "old", name: "Existing", notes: "Keep notes", position: 0,
+      created_at: expect.any(String), updated_at: expect.any(String) });
   expect(tables.map(table => reopened.prepare(`SELECT * FROM ${table}`).all())).toEqual(before);
   expect(reopened.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
   const schema = reopened.prepare("SELECT name, sql FROM sqlite_schema ORDER BY name").all();
   reopened.close();
   expect(open().prepare("SELECT name, sql FROM sqlite_schema ORDER BY name").all()).toEqual(schema);
+});
+
+it.each([1, 2] as const)("backfills version %i companies one minute apart in existing order, only once", version => {
+  const db = openLegacy(version);
+  db.exec(`INSERT INTO companies VALUES ('last', 'Last', '', 12);
+    INSERT INTO companies VALUES ('first', 'First', '', 2);
+    INSERT INTO companies VALUES ('middle', 'Middle', '', 7);`);
+  db.close();
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-11-04T12:00:00.000Z"));
+  const upgraded = open();
+  const expected = [
+    { id: "first", created_at: "2026-10-25T12:00:00.000Z", updated_at: "2026-10-25T12:00:00.000Z" },
+    { id: "middle", created_at: "2026-10-25T12:01:00.000Z", updated_at: "2026-10-25T12:01:00.000Z" },
+    { id: "last", created_at: "2026-10-25T12:02:00.000Z", updated_at: "2026-10-25T12:02:00.000Z" },
+  ];
+  expect(upgraded.prepare("SELECT id, created_at, updated_at FROM companies ORDER BY created_at").all()).toEqual(expected);
+  expect(upgraded.prepare("SELECT id FROM companies ORDER BY updated_at DESC").all().map(row => row.id))
+    .toEqual(["last", "middle", "first"]);
+  expect(upgraded.prepare("PRAGMA table_info(companies)").all().filter(row => ["created_at", "updated_at"].includes(row.name as string))
+    .every(row => row.dflt_value === null)).toBe(true);
+  upgraded.close();
+  vi.setSystemTime(new Date("2026-11-05T12:00:00.000Z"));
+  expect(open().prepare("SELECT id, created_at, updated_at FROM companies ORDER BY created_at").all()).toEqual(expected);
 });
 
 it("rolls back a failed multi-record transaction", () => {
@@ -152,4 +179,27 @@ it("rolls back a partially applied timestamp migration and leaves version two in
     .toEqual(["id", "name", "notes", "position", "updated_at"]);
   expect(raw.prepare("SELECT * FROM companies").all()).toEqual(before);
   raw.exec("BEGIN IMMEDIATE; ROLLBACK;");
+});
+
+it("rolls back the schema and earlier backfilled rows when a later company update fails", () => {
+  const db = openLegacy(2);
+  db.exec(`INSERT INTO companies VALUES ('first', 'First', '', 0);
+    INSERT INTO companies VALUES ('second', 'Second', '', 1);
+    CREATE TRIGGER reject_backfill BEFORE UPDATE ON companies WHEN NEW.id = 'second'
+      BEGIN SELECT RAISE(ABORT, 'Backfill failure'); END;`);
+  const before = db.prepare("SELECT * FROM companies ORDER BY position").all();
+  db.close();
+  expect(() => open()).toThrow(/Backfill failure/);
+  const raw = new DatabaseSync(path);
+  connections.push(raw);
+  expect(raw.prepare("PRAGMA user_version").get()).toMatchObject({ user_version: 2 });
+  expect(raw.prepare("PRAGMA table_info(companies)").all().map(row => row.name))
+    .toEqual(["id", "name", "notes", "position"]);
+  expect(raw.prepare("SELECT * FROM companies ORDER BY position").all()).toEqual(before);
+  raw.exec("DROP TRIGGER reject_backfill");
+  raw.close();
+  const retried = open();
+  expect(retried.prepare("PRAGMA user_version").get()).toMatchObject({ user_version: 3 });
+  expect(retried.prepare("SELECT created_at, updated_at FROM companies").all())
+    .toEqual(Array(2).fill({ created_at: expect.any(String), updated_at: expect.any(String) }));
 });

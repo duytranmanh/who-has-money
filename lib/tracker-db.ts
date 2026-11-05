@@ -53,9 +53,18 @@ const migrations: Migration[] = [
     ) STRICT;`);
   } },
   { version: 3, name: "Add company timestamps", up: db => {
+    // 1. Add timestamp columns without defaults for future inserts.
+    // 2. Backfill synthetic dates in existing company order within the opener's transaction.
     // Historical creation and edit times cannot be reconstructed from outreach timestamps.
     db.exec(`ALTER TABLE companies ADD COLUMN created_at TEXT;
       ALTER TABLE companies ADD COLUMN updated_at TEXT;`);
+    const baseline = Date.now() - 10 * 24 * 60 * 60 * 1000;
+    const companies = db.prepare("SELECT id FROM companies ORDER BY position, rowid").all();
+    const update = db.prepare("UPDATE companies SET created_at = ?, updated_at = ? WHERE id = ?");
+    companies.forEach((company, index) => {
+      const at = new Date(baseline + index * 60 * 1000).toISOString();
+      update.run(at, at, company.id);
+    });
   } },
 ];
 

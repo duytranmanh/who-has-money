@@ -10,6 +10,22 @@ import type { ContactProgress, TrackerCompany, TrackerContact } from "@/lib/trac
 type Contact = TrackerContact & ContactProgress;
 type Company = Omit<TrackerCompany, "contacts"> & { contacts: Contact[] };
 type CompanySummary = Omit<Company, "contacts"> & { contacts: Pick<Contact, "id" | "name" | "status" | "isOverdue">[] };
+type ActivityFilter = "in_progress" | "inactive";
+type StatusFilter = "not_contacted" | "awaiting_response" | "follow_up_due" | "responded" | "closed";
+type TrackerFilters = { activity: ActivityFilter[]; status: StatusFilter[] };
+type FilterOption<T extends string> = { value: T; label: string };
+
+const activityOptions: FilterOption<ActivityFilter>[] = [
+  { value: "in_progress", label: "In progress" },
+  { value: "inactive", label: "Inactive" },
+];
+const statusOptions: FilterOption<StatusFilter>[] = [
+  { value: "not_contacted", label: "Not contacted" },
+  { value: "awaiting_response", label: "Awaiting response" },
+  { value: "follow_up_due", label: "Follow-up due" },
+  { value: "responded", label: "Responded" },
+  { value: "closed", label: "Closed" },
+];
 const labels: Record<ContactProgress["status"], string> = {
   uncontacted: "Uncontacted", awaiting_follow_up_1: "Awaiting first follow-up",
   awaiting_follow_up_2: "Awaiting second follow-up", responded: "Responded",
@@ -59,13 +75,7 @@ export default function Tracker({ active }: { active: boolean }) {
   const deletingRef = useRef(false);
   const [deleteError, setDeleteError] = useState("");
   const [query, setQuery] = useState("");
-  const [respondedOnly, setRespondedOnly] = useState(false);
-  const [followUpDueOnly, setFollowUpDueOnly] = useState(false);
-  const [closedOnly, setClosedOnly] = useState(false);
-  const [inProgressOnly, setInProgressOnly] = useState(false);
-  const [inactiveOnly, setInactiveOnly] = useState(false);
-  const [notContactedOnly, setNotContactedOnly] = useState(false);
-  const [awaitingResponseOnly, setAwaitingResponseOnly] = useState(false);
+  const [filters, setFilters] = useState<TrackerFilters>({ activity: [], status: [] });
   const [filterOpen, setFilterOpen] = useState(false);
   const filterControl = useRef<HTMLDivElement>(null);
   const filterButton = useRef<HTMLButtonElement>(null);
@@ -266,30 +276,29 @@ export default function Tracker({ active }: { active: boolean }) {
     .map(link => link.replace(/[.,;:!?\])}]+$/, ""))
     .filter(link => URL.canParse(link)))];
   function resetFilters() {
-    setRespondedOnly(false);
-    setFollowUpDueOnly(false);
-    setClosedOnly(false);
-    setInProgressOnly(false);
-    setInactiveOnly(false);
-    setNotContactedOnly(false);
-    setAwaitingResponseOnly(false);
+    setFilters({ activity: [], status: [] });
   }
 
-  const activityFilterCount = Number(inProgressOnly) + Number(inactiveOnly);
-  const statusFilterCount = Number(respondedOnly) + Number(followUpDueOnly) + Number(closedOnly) + Number(notContactedOnly) + Number(awaitingResponseOnly);
-  const filterCount = activityFilterCount + statusFilterCount;
+  const filterCount = filters.activity.length + filters.status.length;
   const visible = companies.filter(company => {
     const matchesSearch = `${company.name} ${company.notes} ${company.contacts.map(person => person.name).join(" ")}`.toLowerCase().includes(query.trim().toLowerCase());
     const inProgress = isCompanyInProgress(company);
     const responded = company.contacts.some(person => person.status === "responded");
     const followUpDue = company.contacts.some(person => person.isOverdue);
     const closed = isCompanyClosed(company);
-    const notContacted = !inProgress && !responded && !closed;
-    const matchesActivity = activityFilterCount === 0 || (inProgressOnly && inProgress) ||
-      (inactiveOnly && !inProgress && (responded || closed));
-    const matchesStatus = statusFilterCount === 0 || (respondedOnly && responded) ||
-      (followUpDueOnly && followUpDue) || (closedOnly && closed) ||
-      (notContactedOnly && notContacted) || (awaitingResponseOnly && inProgress && !followUpDue);
+    const activityMatches: Record<ActivityFilter, boolean> = {
+      in_progress: inProgress,
+      inactive: !inProgress && (responded || closed),
+    };
+    const statusMatches: Record<StatusFilter, boolean> = {
+      not_contacted: !inProgress && !responded && !closed,
+      awaiting_response: inProgress && !followUpDue,
+      follow_up_due: followUpDue,
+      responded,
+      closed,
+    };
+    const matchesActivity = filters.activity.length === 0 || filters.activity.some(value => activityMatches[value]);
+    const matchesStatus = filters.status.length === 0 || filters.status.some(value => statusMatches[value]);
     return matchesSearch && matchesActivity && matchesStatus;
   });
 
@@ -309,24 +318,24 @@ export default function Tracker({ active }: { active: boolean }) {
                 <button type="button" disabled={navigationLocked || filterCount === 0} onClick={resetFilters}>Reset</button></div>
               <fieldset disabled={navigationLocked}>
                 <legend>Activity</legend>
-                <div className="field-row"><input id="tracker-filter-in-progress" type="checkbox" checked={inProgressOnly} onChange={event => setInProgressOnly(event.target.checked)} />
-                  <label htmlFor="tracker-filter-in-progress">In progress</label></div>
-                <div className="field-row"><input id="tracker-filter-inactive" type="checkbox" checked={inactiveOnly} onChange={event => setInactiveOnly(event.target.checked)} />
-                  <label htmlFor="tracker-filter-inactive">Inactive</label></div>
+                {activityOptions.map(option => <div className="field-row" key={option.value}>
+                  <input id={`tracker-filter-${option.value}`} type="checkbox" checked={filters.activity.includes(option.value)} onChange={event => {
+                    const checked = event.target.checked;
+                    setFilters(current => ({ ...current, activity: checked ? [...current.activity, option.value] : current.activity.filter(value => value !== option.value) }));
+                  }} />
+                  <label htmlFor={`tracker-filter-${option.value}`}>{option.label}</label>
+                </div>)}
               </fieldset>
               <hr className="application-filter-divider" />
               <fieldset disabled={navigationLocked}>
                 <legend>Status</legend>
-                <div className="field-row"><input id="tracker-filter-not-contacted" type="checkbox" checked={notContactedOnly} onChange={event => setNotContactedOnly(event.target.checked)} />
-                  <label htmlFor="tracker-filter-not-contacted">Not contacted</label></div>
-                <div className="field-row"><input id="tracker-filter-awaiting-response" type="checkbox" checked={awaitingResponseOnly} onChange={event => setAwaitingResponseOnly(event.target.checked)} />
-                  <label htmlFor="tracker-filter-awaiting-response">Awaiting response</label></div>
-                <div className="field-row"><input id="tracker-filter-due" type="checkbox" checked={followUpDueOnly} onChange={event => setFollowUpDueOnly(event.target.checked)} />
-                  <label htmlFor="tracker-filter-due">Follow-up due</label></div>
-                <div className="field-row"><input id="tracker-filter-responded" type="checkbox" checked={respondedOnly} onChange={event => setRespondedOnly(event.target.checked)} />
-                  <label htmlFor="tracker-filter-responded">Responded</label></div>
-                <div className="field-row"><input id="tracker-filter-closed" type="checkbox" checked={closedOnly} onChange={event => setClosedOnly(event.target.checked)} />
-                  <label htmlFor="tracker-filter-closed">Closed</label></div>
+                {statusOptions.map(option => <div className="field-row" key={option.value}>
+                  <input id={`tracker-filter-${option.value}`} type="checkbox" checked={filters.status.includes(option.value)} onChange={event => {
+                    const checked = event.target.checked;
+                    setFilters(current => ({ ...current, status: checked ? [...current.status, option.value] : current.status.filter(value => value !== option.value) }));
+                  }} />
+                  <label htmlFor={`tracker-filter-${option.value}`}>{option.label}</label>
+                </div>)}
               </fieldset>
             </div>}
           </div>

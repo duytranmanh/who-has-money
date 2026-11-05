@@ -32,6 +32,14 @@ and less ongoing maintenance.
 
 Use `fixtures/companies.json` as the reference data shape and sample dataset when developing and testing. Do not call the live RecentFunding API unless explicitly requested. Do not change the application's runtime data source unless explicitly requested.
 
+## Applying the code-comments skill
+
+Read and follow `/Users/duy/.codex/skills/code-comments/SKILL.md` when writing or
+modifying code. Explain non-obvious contracts, intent, and constraints. For functions
+with several meaningful stages, include a short numbered flow outline; skip it for
+simple functions. Avoid narrating individual statements, not useful flow summaries.
+Keep comments accurate within the changed scope.
+
 <!-- BEGIN:nextjs-agent-rules -->
 
 ## This is NOT the Next.js you know

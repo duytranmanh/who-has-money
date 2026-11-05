@@ -159,7 +159,11 @@ export default function Tracker({ active }: { active: boolean }) {
     };
   }, [active, attempt, selectedId]);
 
+  // Merge only server-confirmed saves, including timestamps, without allowing overlapping reads to replace them.
   async function persist(url: string, method: string, values: Record<string, unknown>) {
+    // 1. Invalidate pending reads and hold the write guard.
+    // 2. Save, then merge the confirmed company or remove its deleted tree.
+    // 3. Release the guard on success or failure.
     // Invalidate overlapping reads both before and after persistence.
     writes.current += 1;
     revision.current += 1;
@@ -176,6 +180,7 @@ export default function Tracker({ active }: { active: boolean }) {
       }
       if (!data.company?.id) throw new Error("Unexpected save response. Reload before retrying.");
       const summary: CompanySummary = { id: data.company.id, name: data.company.name, notes: data.company.notes,
+        createdAt: data.company.createdAt, updatedAt: data.company.updatedAt,
         contacts: data.company.contacts.map((person: Contact) => ({ id: person.id, name: person.name, status: person.status, isOverdue: person.isOverdue })) };
       setCompanies(current => current.some(company => company.id === data.companyId)
         ? current.map(company => company.id === data.companyId ? summary : company)

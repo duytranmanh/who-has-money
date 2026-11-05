@@ -33,7 +33,7 @@ beforeEach(async () => {
   state.store = createTrackerStorage(db);
   state.fail = false;
 });
-afterEach(async () => { vi.restoreAllMocks(); db.close(); await rm(directory, { recursive: true, force: true }); });
+afterEach(async () => { vi.useRealTimers(); vi.restoreAllMocks(); db.close(); await rm(directory, { recursive: true, force: true }); });
 const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
 const req = (body: unknown, method = "POST") => new Request("http://localhost/api/tracker", { method, body: JSON.stringify(body) });
 const message = (day: number) => ({ text: "Hello", sentAt: `2026-01-${String(day).padStart(2, "0")}T12:00:00Z` });
@@ -53,6 +53,84 @@ async function setup() {
 }
 
 describe("tracker API", () => {
+  it("tracks server save time across company, contact, and backdated outreach changes", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-01T12:00:00.000Z"));
+    const created = await result(await createCompany(req({ name: fixture.companies[0].name })), 201);
+    const createdAt = created.computedAt;
+    expect(created.company).toMatchObject({ createdAt, updatedAt: createdAt });
+    const other = await result(await createCompany(req({ name: fixture.companies[1].name })), 201);
+
+    // Each save advances only the owning company's edit time, regardless of backdated sent times.
+    async function saveNext(action: () => Promise<Response>, status = 200) {
+      vi.setSystemTime(new Date(Date.now() + 1000));
+      const saved = await result(await action(), status);
+      expect(saved.company).toMatchObject({ createdAt, updatedAt: saved.computedAt });
+      expect(state.store.getCompany(created.companyId)).toMatchObject({ createdAt, updatedAt: saved.computedAt });
+      expect(state.store.getCompany(other.companyId)).toEqual(other.company);
+      return saved;
+    }
+
+    await saveNext(() => editCompany(req({ notes: "Research" }, "PATCH"), ctx(created.companyId)));
+    const added = await saveNext(() => createContact(req({ name: "Alex" }), ctx(created.companyId)), 201);
+    const contactId = added.company.contacts[0].id;
+    await saveNext(() => editContact(req({ email: "alex@example.com" }, "PATCH"), ctx(contactId)));
+    const initial = await saveNext(() => start(req(message(1)), ctx(contactId)), 201);
+    const sequenceId = initial.company.contacts[0].sequences[0].id;
+    const followed = await saveNext(() => follow(req(message(4)), ctx(sequenceId)), 201);
+    const messageId = followed.company.contacts[0].sequences[0].messages[1].id;
+    await saveNext(() => edit(req({ sentAt: message(5).sentAt }, "PATCH"), ctx(messageId)));
+    await saveNext(() => remove(req({}, "DELETE"), ctx(messageId)));
+    await saveNext(() => close(req({ action: "record_response", at: message(6).sentAt }, "PATCH"), ctx(sequenceId)));
+    await saveNext(() => close(req({ action: "edit_closure", at: message(7).sentAt }, "PATCH"), ctx(sequenceId)));
+    await saveNext(() => start(req(message(8)), ctx(contactId)), 201);
+    const deleted = await saveNext(() => deleteContact(req({}, "DELETE"), ctx(contactId)));
+
+    vi.setSystemTime(new Date(Date.now() + 1000));
+    const summary = (await (await listCompanies()).json()).companies.find((company: TrackerCompany) => company.id === created.companyId);
+    const detail = (await (await getCompany(new Request("http://localhost"), ctx(created.companyId))).json()).company;
+    const full = (await (await GET()).json()).companies.find((company: TrackerCompany) => company.id === created.companyId);
+    for (const company of [summary, detail, full, state.store.getCompany(created.companyId)]) {
+      expect(company).toMatchObject({ createdAt, updatedAt: deleted.computedAt });
+    }
+  });
+
+  it("keeps legacy creation times unknown while tracking subsequent saves", async () => {
+    const legacy = { id: "legacy", name: fixture.companies[0].name, notes: "", createdAt: null, updatedAt: null };
+    state.store.insertCompany(legacy);
+    expect((await (await listCompanies()).json()).companies[0]).toMatchObject(legacy);
+    expect((await (await GET()).json()).companies[0]).toMatchObject(legacy);
+    const edited = await result(await editCompany(req({ notes: "Edited" }, "PATCH"), ctx(legacy.id)));
+    expect(edited.company).toMatchObject({ createdAt: null, updatedAt: edited.computedAt });
+  });
+
+  it("rolls back resource changes and timestamps when a failure follows the timestamp write", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-01T12:00:00.000Z"));
+    const { companyId } = await setup();
+    const before = state.store.listCompanies();
+    vi.setSystemTime(new Date("2026-11-02T12:00:00.000Z"));
+    const touch = state.store.touchCompany;
+    vi.spyOn(state.store, "touchCompany").mockImplementation((id, at) => {
+      touch(id, at);
+      expect(state.store.getCompany(id)?.updatedAt).toBe(at);
+      throw new Error("Failure after timestamp write");
+    });
+    expect((await editCompany(req({ notes: "Must roll back" }, "PATCH"), ctx(companyId))).status).toBe(500);
+    expect(state.store.listCompanies()).toEqual(before);
+    expect(db.isTransaction).toBe(false);
+  });
+
+  it.each(["createdAt", "updatedAt"])("rejects client-controlled %s on creation and edits", async field => {
+    const input = { [field]: "2020-01-01T00:00:00.000Z" };
+    expect((await createCompany(req({ name: fixture.companies[0].name, ...input }))).status).toBe(400);
+    const { companyId } = await setup();
+    const before = state.store.listCompanies();
+    expect((await editCompany(req({ notes: "Spoofed", ...input }, "PATCH"), ctx(companyId))).status).toBe(400);
+    expect(state.store.listCompanies()).toEqual(before);
+  });
+
   it("deletes a contact's history while preserving its company and other contacts", async () => {
     const { companyId, contactId } = await setup();
     await start(req(message(1)), ctx(contactId));
@@ -103,6 +181,7 @@ describe("tracker API", () => {
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     const body = await response.json();
     expect(body.companies).toEqual([{ id: companyId, name: fixture.companies[0].name, notes: "",
+      createdAt: expect.any(String), updatedAt: expect.any(String),
       contacts: [{ id: contactId, name: "Alex", status: "awaiting_follow_up_1", isOverdue: true }] }]);
   });
 

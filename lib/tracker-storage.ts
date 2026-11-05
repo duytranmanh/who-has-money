@@ -64,7 +64,11 @@ export function createTrackerStorage(db: DatabaseSync) {
   // Filters are internal SQL fragments; caller-provided IDs are always bound parameters.
   // LEFT JOINs preserve parents without children. Maps collapse repeated parent rows.
   function readCompanies(where = "1 = 1", values: SQLInputValue[] = []): TrackerCompany[] {
+    // 1. Read the requested company trees in one ordered snapshot.
+    // 2. Assemble shared parents while preserving empty companies, contacts, and sequences.
+    // 3. Return nested records with persisted metadata, leaving progress calculation to callers.
     const rows = db.prepare(`SELECT c.id AS companyId, c.name AS companyName, c.notes AS companyNotes,
+      c.created_at AS createdAt, c.updated_at AS updatedAt,
       p.id AS contactId, p.name AS contactName, p.email, p.links_json,
       s.id AS sequenceId, s.closed_at, s.close_reason, s.responded_at,
       m.id AS messageId, m.kind, m.text, m.sent_at, m.notes AS messageNotes
@@ -80,7 +84,8 @@ export function createTrackerStorage(db: DatabaseSync) {
       const companyId = row.companyId as string;
       let company = companies.get(companyId);
       if (!company) {
-        company = { id: companyId, name: row.companyName as string, notes: row.companyNotes as string, contacts: [] };
+        company = { id: companyId, name: row.companyName as string, notes: row.companyNotes as string, contacts: [],
+          createdAt: row.createdAt as string | null, updatedAt: row.updatedAt as string | null };
         companies.set(companyId, company);
       }
       if (row.contactId === null) continue;
@@ -135,7 +140,8 @@ export function createTrackerStorage(db: DatabaseSync) {
 
   // Only the newest attempt's closure, message count, and last sent time are needed for sidebar badges.
   function listCompanySummaries() {
-    const rows = db.prepare(`SELECT c.id, c.name, c.notes, p.id AS contactId, p.name AS contactName,
+    const rows = db.prepare(`SELECT c.id, c.name, c.notes, c.created_at AS createdAt, c.updated_at AS updatedAt,
+      p.id AS contactId, p.name AS contactName,
       s.close_reason AS closeReason,
       (SELECT count(*) FROM messages WHERE sequence_id = s.id) AS messageCount,
       (SELECT sent_at FROM messages WHERE sequence_id = s.id ORDER BY position DESC LIMIT 1) AS lastSentAt
@@ -148,7 +154,8 @@ export function createTrackerStorage(db: DatabaseSync) {
       const id = row.id as string;
       let company = companies.get(id);
       if (!company) {
-        company = { id, name: row.name as string, notes: row.notes as string, contacts: [] };
+        company = { id, name: row.name as string, notes: row.notes as string, contacts: [],
+          createdAt: row.createdAt as string | null, updatedAt: row.updatedAt as string | null };
         companies.set(id, company);
       }
       if (row.contactId !== null) company.contacts.push({ id: row.contactId as string, name: row.contactName as string,
@@ -177,12 +184,18 @@ export function createTrackerStorage(db: DatabaseSync) {
   ///////////////////////////////////////////////////////////////////////////////
   // Inserts append in creation order. Child collections are persisted with their own resource methods.
   function insertCompany(company: CompanyFields): void {
-    write(`INSERT INTO companies (id, name, notes, position)
-      SELECT ?, ?, ?, COALESCE(MAX(position), -1) + 1 FROM companies`, company.id, company.name, company.notes);
+    write(`INSERT INTO companies (id, name, notes, created_at, updated_at, position)
+      SELECT ?, ?, ?, ?, ?, COALESCE(MAX(position), -1) + 1 FROM companies`,
+    company.id, company.name, company.notes, company.createdAt, company.updatedAt);
   }
 
-  function updateCompany(company: CompanyFields): boolean {
+  function updateCompany(company: Pick<CompanyFields, "id" | "name" | "notes">): boolean {
     return write("UPDATE companies SET name = ?, notes = ? WHERE id = ?", company.name, company.notes, company.id);
+  }
+
+  // The API touches the owning company after each save, within the same business transaction.
+  function touchCompany(id: string, at: string): boolean {
+    return write("UPDATE companies SET updated_at = ? WHERE id = ?", at, id);
   }
 
   function insertContact(companyId: string, contact: ContactFields): void {
@@ -249,7 +262,7 @@ export function createTrackerStorage(db: DatabaseSync) {
     return write("DELETE FROM messages WHERE id = ?", id);
   }
 
-  return { transaction, listCompanySummaries, findContactOwner, listCompanies, getCompany, insertCompany, updateCompany, deleteCompany,
+  return { transaction, listCompanySummaries, findContactOwner, listCompanies, getCompany, insertCompany, updateCompany, touchCompany, deleteCompany,
     listContacts, getContact, insertContact, updateContact, deleteContact,
     listSequences, getSequence, insertSequence, updateSequence, deleteSequence,
     listMessages, getMessage, insertMessage, updateMessage, deleteMessage };

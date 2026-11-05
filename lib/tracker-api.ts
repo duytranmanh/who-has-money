@@ -41,7 +41,8 @@ async function body(request: Request, allowed: string[], required: string[]): Pr
   return record as Record<string, string> & { links?: string[] };
 }
 
-// Logic owns the transaction: read, apply domain rules, persist resource changes, and build the response together.
+// Commit resource changes and the owning company's save timestamp together, using one server clock.
+// No response claims success until the transaction commits.
 export async function trackerWrite(
   request: Request,
   allowed: string[],
@@ -49,11 +50,15 @@ export async function trackerWrite(
   change: (data: TrackerStore, input: Record<string, string> & { links?: string[] }, now: Date) => string,
   status = 200,
 ): Promise<Response> {
+  // 1. Parse client-editable input before opening the transaction.
+  // 2. Apply resource changes and stamp the company with server save time.
+  // 3. Build refreshed state and commit; failures roll back before returning an error.
   try {
     const input = allowed.length ? await body(request, allowed, required) : {} as Record<string, string>;
     return withTrackerStore(store => store.transaction(() => {
       const now = new Date();
       const companyId = change(store, input, now);
+      store.touchCompany(companyId, now.toISOString());
       return Response.json({ companyId, company: companyView(findCompany(store, companyId), now), computedAt: now.toISOString() }, { status, headers });
     }));
   } catch (error) { return errorResponse(error); }

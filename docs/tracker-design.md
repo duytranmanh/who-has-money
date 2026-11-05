@@ -196,7 +196,28 @@ Selecting a company fetches that company's full details. The legacy full-tracker
 endpoint remains available for compatibility.
 
 `data/tracker.json` is a backup only and is no longer read or written by the app.
-Existing imported schema version 2 databases remain supported. To back up SQLite,
+Existing imported schema version 2 databases upgrade automatically to version 3. To back up SQLite,
 stop the app, then copy `data/tracker.sqlite` to a separate backup file before restarting.
+
+Schema migrations live in the ordered `migrations` list in `lib/tracker-db.ts`.
+Append the next consecutive version with a descriptive name and synchronous `up(db)`
+function; leave applied migrations unchanged. On the first tracker database access
+after an app restart, the opener reads `PRAGMA user_version` under a write lock and
+runs all missing migrations in order. The opener updates the version after each
+migration and commits the entire upgrade together; any failure rolls back all pending
+migrations and their version updates. Migration functions must not manage transactions
+or set `user_version` themselves. Databases newer than the app supports are rejected.
+No separate migration command or history table is required.
+
+Version 3 adds nullable `created_at` and `updated_at` columns to companies. Existing
+rows retain `NULL` timestamps because outreach dates do not establish when records
+were created or edited. New companies receive both timestamps from the server clock.
+Each successful API save, including contact deletion and backdated outreach edits,
+updates the owning company's `updated_at` in the same transaction. Saving unchanged
+values also counts as a save. Reads do not change timestamps; failed saves roll them
+back with the resource changes. Company deletion removes the row without a timestamp
+update. Storage CRUD methods do not touch timestamps implicitly; API orchestration owns
+that step. Company summaries, details, and save responses expose `createdAt` and
+`updatedAt` as UTC ISO strings or `null`. Clients cannot set either field.
 
 Naming: `<feature>-api.ts` for HTTP helpers, `<feature>.ts` for logic, and `<feature>-storage.ts` for persistence. Tests live beside each file as `<name>.test.ts`. Next.js endpoints use `route.ts`.

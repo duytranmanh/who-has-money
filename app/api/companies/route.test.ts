@@ -7,6 +7,8 @@ import { createFundingStorage } from "../../../lib/funding-storage";
 import { GET } from "./route";
 import { POST } from "./refresh/route";
 
+vi.mock("next/server", () => ({ connection: vi.fn().mockResolvedValue(undefined) }));
+
 vi.mock("../../../lib/funding-storage", async importOriginal => {
   const actual = await importOriginal<typeof import("../../../lib/funding-storage")>();
   return { ...actual, createFundingStorage: vi.fn(actual.createFundingStorage) };

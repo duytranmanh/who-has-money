@@ -107,7 +107,7 @@ export async function companyResearchRead(request: Request, slug: string): Promi
         return Response.json({ run: runView(run, companyHash, profileHash) }, { headers });
       }
       const history = store.listRuns(slug, date);
-      const successful = history.find(run => run.status === "completed");
+      const successful = history.find(run => run.status === "completed" && run.promptVersion === RESEARCH_PROMPT_VERSION);
       return Response.json({ companySlug: slug, announcedDate: date,
         currentInputsAvailable: { company: !!company, profile: !!profile },
         latestAttempt: history[0] ? runView(store.getRun(history[0].id)!, companyHash, profileHash) : null,

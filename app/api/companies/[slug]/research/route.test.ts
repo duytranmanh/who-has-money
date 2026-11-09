@@ -13,6 +13,7 @@ import { openTrackerDatabase } from "@/lib/tracker-db";
 import { createCompanyResearchStorage } from "@/lib/company-research-storage";
 import { researchCompany, RESEARCH_MODEL, RESEARCH_PROMPT_VERSION, type ResearchResult } from "@/lib/company-research";
 import { researchInputHash } from "@/lib/company-research-api";
+import { logger } from "@/lib/logger";
 import { GET, POST } from "./route";
 
 const state = vi.hoisted(() => ({
@@ -55,9 +56,9 @@ function result(failed = false): ResearchResult {
   if (failed) return { ...base, status: "failed", error: "No validated assessment" };
   return { ...base, status: "completed", assessment: {
     company_slug: company.slug, fit_judgment: "insufficient_evidence", fit_summary: "Needs more research.",
-    reasons_connected_to_profile: [], supporting_facts: [], mismatches: [], unknowns: ["Engineering needs"],
-    hiring: { status: "unknown", summary: "No verified opening.", fact_ids: [] },
-    role_suitability: { status: "unknown", summary: "No role assessed.", fact_ids: [] },
+    reasons_connected_to_profile: [], mismatches: [], unknowns: ["Engineering needs"],
+    hiring: { status: "unknown", summary: "No verified opening.", source_ids: [] },
+    role_suitability: { status: "unknown", summary: "No role assessed.", source_ids: [] },
     recommended_next_step: { action: "further_research", reason: "Verify engineering needs." },
   } };
 }
@@ -65,6 +66,9 @@ function result(failed = false): ResearchResult {
 let directory: string;
 let db: DatabaseSync;
 beforeEach(() => {
+  vi.spyOn(logger, "info").mockImplementation(() => {});
+  vi.spyOn(logger, "warn").mockImplementation(() => {});
+  vi.spyOn(logger, "error").mockImplementation(() => {});
   directory = mkdtempSync(join(tmpdir(), "research-api-"));
   db = openTrackerDatabase(join(directory, "tracker.sqlite"));
   state.store = createCompanyResearchStorage(db);
@@ -100,7 +104,10 @@ it("saves trusted inputs and a completed result before reporting success", async
   const response = await post();
   expect(response.status).toBe(201);
   const data = await response.json();
-  expect(researchCompany).toHaveBeenCalledWith(company, profile, { signal: expect.any(AbortSignal) });
+  expect(researchCompany).toHaveBeenCalledWith(company, profile, { signal: expect.any(AbortSignal), runId: data.run.id });
+  expect(logger.info).toHaveBeenCalledWith("research.claimed", { runId: data.run.id, companySlug: company.slug, announcedDate: date });
+  expect(logger.info).toHaveBeenCalledWith("research.saved", { runId: data.run.id, companySlug: company.slug, status: "completed" });
+  expect(JSON.stringify(vi.mocked(logger.info).mock.calls)).not.toContain("profile-private-secret");
   expect(state.store.getRun(data.run.id)).toMatchObject({ companyInput: company, profile, status: "completed", result: result() });
   expect(data.run).toMatchObject({ stale: false, staleReasons: [] });
   expect(data.run.profile).toBeUndefined();
@@ -124,6 +131,21 @@ it("preserves the last success when a newer attempt fails", async () => {
   expect(data.latestAttempt.id).toBe(failed.run.id);
   expect(data.latestAttempt.status).toBe("failed");
   expect(data.history.map((run: { status: string }) => run.status)).toEqual(["failed", "completed"]);
+});
+
+it("requires a rerun for results from an older prompt version", async () => {
+  const initial = await (await post()).json();
+  // An unsupported assessment shape must never reach the browser.
+  db.prepare("UPDATE research_runs SET prompt_version = ?, result_json = ? WHERE id = ?")
+    .run("old-version", JSON.stringify({ assessment: "unsupported format" }), initial.run.id);
+  const saved = await (await get()).json();
+  expect(saved.latestSuccessful).toBeNull();
+  expect(saved.latestAttempt).toMatchObject({ id: initial.run.id, result: null, stale: true });
+  expect(saved.history).toHaveLength(1);
+  expect((await (await get(date, initial.run.id)).json()).run.result).toBeNull();
+  expect(researchCompany).toHaveBeenCalledTimes(1);
+  const rerun = await (await post()).json();
+  expect((await (await get()).json()).latestSuccessful.id).toBe(rerun.run.id);
 });
 
 it("exposes active progress and rejects concurrent requests without another engine call", async () => {
@@ -237,12 +259,17 @@ it("saves unexpected engine failures with a safe message", async () => {
 });
 
 it("reports persistence failure without claiming a successful save", async () => {
-  vi.spyOn(state.store, "finishRun").mockImplementation(() => { throw new Error("Private disk path"); });
+  vi.spyOn(state.store, "finishRun").mockImplementation(() => { throw Object.assign(new Error("Private disk path"), { code: "SQLITE_FULL" }); });
   const response = await post();
   expect(response.status).toBe(500);
   expect(JSON.stringify(await response.json())).not.toContain("Private disk path");
   expect(state.store.listRuns(company.slug, date)[0].status).toBe("running");
   expect(db.isTransaction).toBe(false);
+  expect(logger.error).toHaveBeenCalledWith("research.request_failed", expect.objectContaining({
+    runId: state.store.listRuns(company.slug, date)[0].id, stage: "save", status: 500, errorCode: "SQLITE_FULL",
+  }));
+  expect(logger.info).not.toHaveBeenCalledWith("research.saved", expect.anything());
+  expect(JSON.stringify(vi.mocked(logger.error).mock.calls)).not.toContain("Private disk path");
 });
 
 it("returns safe errors when storage is unavailable", async () => {

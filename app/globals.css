@@ -249,10 +249,12 @@ body { background: #4a7596; }
 .stage-badge[data-stage="seed"] { background: #d1fae5; color: #006d51; border-color: #6ee7b7; }
 .stage-badge[data-stage="series-a"] { background: #dbeafe; color: #1e40af; border-color: #93c5fd; }
 .stage-badge[data-stage="series-b+"] { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
-.company-dialog { width: min(680px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); margin: auto; padding: 3px; border: 0; color: #18212f; }
+.company-dialog { width: min(960px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); margin: auto; padding: 3px; border: 0; color: #18212f; }
+.company-dialog[open] { display: flex; flex-direction: column; }
+.company-dialog > .title-bar { flex-shrink: 0; }
 .company-dialog::backdrop { background: rgb(0 0 0 / 40%); }
 .company-dialog .title-bar-text { font-size: 13px; }
-.company-dialog-body { padding: 18px; background: #f5f3eb; }
+.company-dialog-body { padding: 18px; background: #f5f3eb; overflow-y: auto; }
 .details-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 16px; background: white; border: 1px solid #7f9db9; }
 .details-header h2 { font-size: 20px; margin: 0 0 8px; overflow-wrap: anywhere; }
 .details-header p { margin: 8px 0 0; color: #657080; line-height: 1.5; }
@@ -266,12 +268,63 @@ body { background: #4a7596; }
 .investor-list li { background: #edf4ff; border: 1px solid #c7d9f5; padding: 4px 8px; }
 .details-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; margin-top: 18px; }
 .details-actions button { margin-left: auto; }
+
+/* Research stays in the company dialog; disclosures keep evidence within the same scroll area. */
+.company-research { margin-top: 12px; border: 1px solid #a6b7ce; background: white; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.company-research h3, .company-research h4 { font: bold 12px Tahoma, Arial, sans-serif; margin: 0; }
+.research-toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; padding: 12px 14px; background: #edf2fa; border-bottom: 1px solid #c5d1e1; }
+.research-toolbar > div { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.research-toolbar h3 { color: #173b80; }
+.research-status { font-size: 11px; color: #4f5e72; }
+.company-research .research-start { background: #0754d5; color: white; border: 1px solid #003c9c; border-radius: 3px; box-shadow: inset 0 1px #ffffff40; padding: 6px 12px; font: bold 12px Tahoma, Arial, sans-serif; min-height: 30px; }
+.company-research .research-start:disabled { background: #e1e5ec; color: #606a79; border-color: #b4bdca; text-shadow: none; }
+.company-research .research-start:not(:disabled):hover { background: #0648b5; }
+.research-notice { margin: 10px 14px; padding: 9px 11px; background: #fff9e8; border: 1px solid #dfcf99; }
+.research-error { background: #fff1ed; border-color: #dfb2a4; color: #812b17; }
+.research-empty { padding: 2px 14px 12px; color: #526075; }
+.research-timestamp { margin: 8px 14px; color: #586477; font-size: 11px; }
+.research-assessment { padding: 14px; background: #f5f8fc; border-bottom: 1px solid #d1dbe8; }
+.research-assessment[data-fit="strong_fit"] { background: #f4faf5; }
+.research-assessment[data-fit="reject"] { background: #fff5f1; }
+.research-assessment[data-fit="insufficient_evidence"] { background: #fffcf2; }
+.research-summary-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.research-summary-heading h3 { text-transform: uppercase; }
+.research-fit { display: inline-block; padding: 2px 10px; border: 1px solid #adc4e5; border-radius: 12px; background: #eaf2ff; color: #244b88; font-size: 11px; font-weight: bold; }
+[data-fit="strong_fit"] .research-fit { background: #e1f7e8; border-color: #8ccea2; color: #195e30; }
+[data-fit="reject"] .research-fit { background: #ffe6df; border-color: #e8ae9b; color: #8b3018; }
+[data-fit="insufficient_evidence"] .research-fit { background: #fff2c9; border-color: #d9c576; color: #705719; }
+.research-source-count { margin-left: auto; font-size: 11px; color: #586477; }
+.research-assessment > p { margin: 10px 0; }
+.research-recommendation { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; padding: 10px; border: 1px solid #c9d4d0; background: #ffffff99; }
+.research-recommendation > strong { font-size: 10px; text-transform: uppercase; color: #355744; }
+.research-disclosure + .research-disclosure { border-top: 1px solid #d0ccb8; }
+.research-disclosure > summary { padding: 10px 14px; background: #ece9d8; color: #173b80; cursor: pointer; font-weight: bold; }
+.research-disclosure > summary:hover { background: #e5e2d0; }
+.research-detail-body { padding: 14px; background: #fdfcf9; }
+.research-detail-body p { margin: 6px 0 0; }
+.research-detail-body ul { padding-left: 20px; margin: 7px 0 0; }
+.research-detail-body li + li { margin-top: 5px; }
+.research-matches { border-left: 2px solid #39864a; padding-left: 12px; margin-bottom: 14px; }
+.research-matches h4 { color: #226534; }
+.research-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.research-detail-grid > section { min-width: 0; border: 1px solid #d8d2bf; background: #fff; padding: 12px; }
+.research-detail-grid h4 { text-transform: uppercase; margin-bottom: 6px; }
+.research-label { font-size: 11px; color: #526075; }
+.research-unknowns h4 { color: #8c4e14; }
+.research-citation { display: inline-block; margin-left: 4px; font-weight: bold; }
+.research-evidence article { padding: 12px; border: 1px solid #bdcde1; background: #f4f7fc; scroll-margin: 12px; margin-bottom: 10px; }
+.research-evidence blockquote { margin: 8px 0; border-left: 2px solid #b9c5d5; padding-left: 10px; color: #4d5a6d; }
+.research-evidence h4 { margin-top: 16px; }
+.research-source-date { display: block; font-size: 10px; color: #586477; }
+.company-research a:focus-visible, .research-disclosure > summary:focus-visible, .research-evidence article:focus { outline: 2px solid #0754d5; outline-offset: 3px; }
 @media (max-width: 680px) {
   .discovery-panel .desktop { padding: 8px; }
   .companies-window .toolbar .control { min-width: 0; width: 100%; }
   .details-header { flex-direction: column; }
   .round-size { text-align: left; }
   .company-dialog-body { padding: 12px; }
+  .research-detail-grid { grid-template-columns: 1fr; }
+  .research-source-count { margin-left: 0; }
 }
 
 @media (max-width: 600px) {

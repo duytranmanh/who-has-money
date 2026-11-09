@@ -1,6 +1,7 @@
 /**
  * @fileoverview Persists company research attempts by slug and UTC funding announcement date.
  * Keeps input snapshots and engine results independent of Applications companies.
+ * Only exposes result payloads from the current research prompt version.
  *
  * Uses the connection and transaction mechanics in lib/tracker-storage.ts.
  * Called by lib/company-research-api.ts, which owns business transaction boundaries.
@@ -8,7 +9,7 @@
  */
 
 import type { DatabaseSync } from "node:sqlite";
-import type { ResearchCompany, ResearchProfile, ResearchResult } from "./company-research";
+import { RESEARCH_PROMPT_VERSION, type ResearchCompany, type ResearchProfile, type ResearchResult } from "./company-research";
 import { createTrackerStorage, withTrackerDatabase } from "./tracker-storage";
 
 export type ResearchRunSummary = {
@@ -42,7 +43,9 @@ export function createCompanyResearchStorage(db: DatabaseSync) {
     if (!row) return undefined;
     const { company_input_json, profile_json, result_json, ...summary } = row;
     return { ...summary as ResearchRunSummary, companyInput: JSON.parse(company_input_json as string),
-      profile: JSON.parse(profile_json as string), result: result_json === null ? null : JSON.parse(result_json as string) };
+      profile: JSON.parse(profile_json as string),
+      // Older result formats require an explicit rerun, not conversion on read.
+      result: result_json === null || summary.promptVersion !== RESEARCH_PROMPT_VERSION ? null : JSON.parse(result_json as string) };
   }
 
   // Expiration and a new claim belong in one caller-owned transaction.

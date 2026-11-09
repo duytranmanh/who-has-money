@@ -1,7 +1,14 @@
 "use client";
 
+/**
+ * @fileoverview Browses saved Discovery companies and opens their round-specific details.
+ * Delegates research controls and assessments to app/company-research-panel.tsx.
+ * Keeps the separate Applications workspace mounted after its first visit.
+ */
+
 import { formatDateTime } from "@/lib/date-time";
 import { Fragment, useEffect, useRef, useState } from "react";
+import CompanyResearchPanel from "./company-research-panel";
 import Tracker from "./tracker";
 
 type Company = {
@@ -95,6 +102,8 @@ function CompanyDetails({ company, onClose }: { company: Company; onClose: () =>
           <p>Announced {company.date === null ? "—" : dateLabel(company.date)}</p></div>
         <div className="round-size"><span>Round size</span><strong>{company.amount === null ? "Undisclosed" : money.format(company.amount)}</strong></div>
       </header>
+      <CompanyResearchPanel key={`${company.slug}:${company.date}`} slug={company.slug}
+        announcedDate={company.date === null ? null : new Date(company.date).toISOString().slice(0, 10)} />
       <section className="details-card"><h3>About the company</h3><p>{company.description || "No description available."}</p>
         {company.sector && <p><strong>Sector:</strong> {company.sector}</p>}</section>
       <section className="details-card"><h3>Investors & backers</h3>

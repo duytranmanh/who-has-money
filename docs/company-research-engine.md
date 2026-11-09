@@ -25,9 +25,19 @@ node --env-file=.env.local scripts/research-company.ts growthware
 
 The CLI prints one JSON run containing `status`, a validated `assessment` on success or `error` on failure, retrieved `sources`, page-tool diagnostics, model-call timing and token usage, timestamps, model, and prompt version. Failed runs exit nonzero. Input/configuration errors also exit nonzero. CLI results are printed without persistence; the HTTP API saves runs in SQLite.
 
+## Delete saved research
+
+Stop the app, then run from the project root:
+
+```sh
+node scripts/delete-research.ts
+```
+
+This permanently deletes every research attempt, including running, completed, and failed runs, from `data/tracker.sqlite`. It prints the deleted count. Applications, contacts, messages, funding snapshots, and `data/profile.json` remain intact. An absent database produces an error without creating a database file.
+
 ## Implementation
 
-- `lib/company-research.ts`: profile validation, bounded tool loop, structured assessment, evidence-reference checks, and run diagnostics. `researchCompany(company, profile)` accepts company data independently of the CLI. Tests inject the model and page reader.
+- `lib/company-research.ts`: profile validation, one page-selection call, one fresh structured assessment, bounded retries, evidence-reference checks, and run diagnostics. `researchCompany(company, profile)` accepts company data independently of the CLI. Tests inject the model and page reader.
 - `lib/research-page.ts`: public-page reading, redirect/DNS checks, bounded HTML extraction, and discovered links.
 - `scripts/research-company.ts`: fixture/profile loading and command-line output.
 - `lib/company-research-api.ts`: trusted input loading, exclusive run claims, engine execution, and HTTP responses.
@@ -63,11 +73,15 @@ Orchestration commits expiration and claim insertion together, releases the data
 
 The engine has a 90-second deadline. Persisted claims expire after 120 seconds, allowing time to validate and save a result. A later GET or POST for that round marks overdue claims failed. Results arriving after expiration cannot overwrite expired records or newer attempts. No background worker or automatic retry runs after a process crash, request interruption, or save failure; old successful results remain available, and another explicit POST can claim the round after expiration. Request cancellation is passed to the engine.
 
-The engine reads the homepage first. The model can then request links actually returned by retrieved pages, including linked external job boards. Relevant careers, product, about, and team links take priority in the returned link list. URLs invented by the model and duplicate attempts are rejected.
+The engine reads the homepage first. One structured selection call chooses up to two additional pages from eight discovered candidates, including linked external job boards. Careers, product, about, and team links take priority. The model returns link IDs rather than tool calls or executable URLs; unknown IDs are ignored and duplicates are removed. An empty selection is valid. Invalid selection JSON falls back to homepage evidence. Selection is skipped when no usable links are available. Links found on the selected pages do not trigger further browsing.
 
-Research uses Groq `openai/gpt-oss-20b`. A separate final call requests strict JSON-schema output without tools. Local validation checks the shape, company identity, unique fact IDs, known evidence references, and exact excerpts from retrieved text or company input fields. Fit reasons and mismatches require fact references. Positive/negative hiring and role judgments require evidence. An `apply` recommendation requires a verified opening and a possible role match.
+Research uses Groq `openai/gpt-oss-20b`. One final call requests strict JSON-schema output without tools. Its two-message request contains compact company fields, the profile, evidence gaps, and retrieved excerpts. It contains no selection output, earlier draft assessment, tool history, or page link lists. Reasons, mismatches, hiring, and role suitability each carry direct `source_ids`. Local validation checks the shape, company identity, and source references. An `apply` recommendation requires a verified opening and a possible role match.
 
-Sources use IDs such as `page_1`. Input evidence uses `company.FIELD`, such as `company.description`. Each fact contains a claim, source ID, and verbatim quote. These checks establish evidence provenance; they cannot establish that a model's interpretation logically follows from a quote. Review remains necessary.
+Prompt version 4 identifies the simplified assessment shape. Results from other prompt versions are excluded from assessment display and require an explicit rerun. Saved company/profile snapshots remain exact; model input excludes unrelated company feed metadata. Description text is limited to 1,500 characters and investors to eight entries. The combined company/profile input must fit 6,000 characters. Oversized input fails before network use with instructions to shorten the profile; profile requirements are never silently truncated.
+
+The assessment receives an explicit `available_source_ids` list, with concrete references such as `page_1`, `company.description`, and `company.amount_usd` when available. These IDs also constrain the response schema. A reason looks like `{"reason":"Potential product engineering fit","source_ids":["page_1"]}`. There is no `supporting_facts` collection, generated fact ID, or model-generated quote. The UI links each reason directly to fetched page excerpts or the cited saved funding field. Reference checks establish that sources exist, not that an interpretation follows from their content.
+
+There is no compatibility conversion for older assessment formats. Their history summaries and input snapshots remain available, but result payloads are returned as `null` and cannot become `latestSuccessful`. Rerun research to generate a current assessment.
 
 ## Server diagnostics
 
@@ -75,20 +89,27 @@ Research uses the dependency-free `lib/logger.ts` logger. Each event is one JSON
 
 API claims, engine runs, page attempts, model calls, and saves share the persisted `runId`. Standalone CLI runs generate a correlation ID without creating a database record. Normal GET polling is not logged; request failures include their stage and a run ID or read request ID.
 
-Events include timings, token usage, page/source counts, provider status/code, request ID, retry delay, and attempted tool name when available. Rate-limit errors also expose numeric token limits and usage when present in provider diagnostics. Citation failures identify the fact/source IDs and distinguish `missing_source` from `quote_mismatch`. Provider messages, generated arguments, prompts, profile content, page text, URLs, credentials, and full error objects are excluded from logs. Existing saved run diagnostics and API responses are unchanged; logging adds neither retries nor error-message translation.
+Events include timings, token usage, request character counts, page/source counts, provider status/code, request ID, retry delay, and attempted tool name when available. Rate-limit errors also expose numeric token limits and usage when present in provider diagnostics. Retry events distinguish rate-limit waits from oversized-request reductions. Each provider attempt gets its own trace; its timing excludes retry waits.
+
+Unknown source references log `missing_source`, the source ID, and `availableSourceIds`. Quote matching and the intermediate fact-reference graph are removed. Provider messages, generated arguments, prompts, direct profile data, page text, URLs, credentials, and full assessments/errors are not dumped. Browser error-message translation remains separate from diagnostics.
 
 ## Limits and failures
 
-- At most four model calls, reserving one for the final assessment; no automatic SDK retries.
-- At most five page attempts. Invalid or duplicate page requests consume the attempt budget. Excess requests return tool errors without network reads.
-- At most 4,096 completion tokens per model call; one 90-second deadline for the run.
+- At most two logical model calls: page selection and final assessment. Each allows one explicit retry, so a run makes at most four provider attempts. Automatic SDK retries remain disabled.
+- Rate-limit retries honor `Retry-After` when present, defaulting to five seconds otherwise. Waits must fit within 30 seconds and the remaining run deadline. Cancellation interrupts the wait. Retries reuse fetched pages and retry only the failed stage.
+- HTTP 413, or a provider-reported token request exceeding the full allowance, halves page evidence for one retry instead of waiting. If no evidence can be reduced, the attempt fails. A second failure is retained without restarting research.
+- Provider HTTP 400 with `json_validate_failed` retries the failed stage once with static, stage-specific JSON correction guidance and the same fetched evidence. Failed generations are not fed back into the prompt. This shares the existing one-retry-per-stage budget with rate limits and oversized requests; unrelated 400 errors are not retried.
+- At most three page attempts: homepage and two selected pages. Invalid or duplicate reads cannot exceed that budget.
+- At most 256 completion tokens with low reasoning effort for selection, and 3,072 with medium effort for assessment; one 90-second deadline for the run. These effort levels are supported by GPT-OSS on [Groq](https://console.groq.com/docs/reasoning).
+- At most 1,600 text characters per retained page and 4,800 across all evidence. Selection sees at most 1,000 homepage text characters. Assessment excludes page link lists.
+- Each serialized model request, including its schema, is limited to 14,000 characters. Page excerpts are reduced locally when necessary. Character budgets are conservative size controls, not exact token counts or a guarantee against the shared organization TPM limit. Actual token usage remains logged for tuning; no model-tokenizer dependency is added.
 - Each page has a 15-second deadline covering DNS, redirects, and body reading; at most three redirects.
 - Each HTTP response is capped at 512,000 bytes. Only uncompressed HTML is accepted.
-- Extracted page text is capped at 12,000 characters; at most 40 deduplicated links are returned.
+- The page reader extracts up to 12,000 text characters and 40 deduplicated links; the engine applies the smaller evidence and candidate budgets before model use.
 - Only HTTP/HTTPS on default ports is accepted, without URL credentials. Private/local addresses are blocked, including resolved DNS addresses and redirect destinations. Each connection is pinned to its checked DNS result.
 - Missing websites and page failures become evidence gaps. Provider failures, deadline/cancellation, truncated completions, malformed assessments, and invalid citations return failed runs with available evidence and diagnostics.
 
-Static HTML extraction cannot see JavaScript-rendered content. There is no general web search, browser automation, background queue, Discovery button, or automatic outreach in this slice.
+Static HTML extraction cannot see JavaScript-rendered content. There is no general web search, browser automation, background queue, or automatic outreach in this slice.
 
 ## Verification
 

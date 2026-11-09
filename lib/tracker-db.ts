@@ -1,3 +1,10 @@
+/**
+ * @fileoverview Opens and atomically upgrades the shared local tracker and research database.
+ * Owns schema migrations; business transactions belong to the feature orchestration layers.
+ *
+ * Used by lib/tracker-storage.ts for the lazy connection shared with company research storage.
+ */
+
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -65,6 +72,30 @@ const migrations: Migration[] = [
       const at = new Date(baseline + index * 60 * 1000).toISOString();
       update.run(at, at, company.id);
     });
+  } },
+  { version: 4, name: "Add company research runs", up: db => {
+    db.exec(`CREATE TABLE research_runs (
+      id TEXT PRIMARY KEY NOT NULL,
+      company_slug TEXT NOT NULL,
+      announced_date TEXT NOT NULL,
+      company_input_json TEXT NOT NULL CHECK (json_valid(company_input_json) AND json_type(company_input_json) = 'object'),
+      company_input_hash TEXT NOT NULL,
+      profile_json TEXT NOT NULL CHECK (json_valid(profile_json) AND json_type(profile_json) = 'object'),
+      profile_hash TEXT NOT NULL,
+      model TEXT NOT NULL,
+      prompt_version TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('running', 'completed', 'failed')),
+      started_at TEXT NOT NULL,
+      finished_at TEXT,
+      deadline_at TEXT NOT NULL,
+      result_json TEXT CHECK (result_json IS NULL OR (json_valid(result_json) AND json_type(result_json) = 'object')),
+      error TEXT,
+      CHECK ((status = 'running' AND finished_at IS NULL AND result_json IS NULL AND error IS NULL)
+        OR (status = 'completed' AND finished_at IS NOT NULL AND result_json IS NOT NULL AND error IS NULL)
+        OR (status = 'failed' AND finished_at IS NOT NULL AND error IS NOT NULL))
+    ) STRICT;
+    CREATE INDEX research_runs_round ON research_runs(company_slug, announced_date, started_at DESC);
+    CREATE UNIQUE INDEX research_runs_active ON research_runs(company_slug, announced_date) WHERE status = 'running';`);
   } },
 ];
 

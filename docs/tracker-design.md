@@ -190,13 +190,16 @@ Examples of one logical transaction:
   write succeeds. Use temporary databases, never saved user data, for tests.
 
 The runtime database is `data/tracker.sqlite`, using Node.js 22.13+ with `node:sqlite`.
+Migration 4 adds independent company research runs to the same database without changing tracker records.
+Research storage reuses the lazy connection through `withTrackerDatabase()`; its API owns separate synchronous transactions.
+See [company-research-engine.md](company-research-engine.md) for the research schema and lifecycle.
 The connection opens lazily on first use; builds and module imports do not open the database.
 The sidebar fetches company/contact summaries without message bodies or full history.
 Selecting a company fetches that company's full details. The legacy full-tracker GET
 endpoint remains available for compatibility.
 
 `data/tracker.json` is a backup only and is no longer read or written by the app.
-Existing imported schema version 2 databases upgrade automatically to version 3. To back up SQLite,
+Existing imported schema version 2 databases upgrade automatically through versions 3 and 4. To back up SQLite,
 stop the app, then copy `data/tracker.sqlite` to a separate backup file before restarting.
 
 Schema migrations live in the ordered `migrations` list in `lib/tracker-db.ts`.

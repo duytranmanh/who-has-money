@@ -4,6 +4,7 @@
  *
  * Uses lib/research-page.ts for bounded webpage evidence.
  * Called by scripts/research-company.ts for fixture-based CLI runs.
+ * Called by lib/company-research-api.ts for persisted Discovery research.
  * See docs/company-research-engine.md for limits and usage.
  */
 

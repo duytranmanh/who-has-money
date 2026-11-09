@@ -51,3 +51,14 @@ it("rolls back failed transactions and keeps the connection usable", async () =>
   withTrackerStore(store => store.transaction(() => store.insertCompany({ ...createCompany({ name: "Saved" }), id: "saved" })));
   expect(openTrackerDatabase).toHaveBeenCalledTimes(1);
 });
+
+it("shares the tracker connection with research storage", async () => {
+  const { withTrackerStore } = await import("./tracker-storage");
+  const { withCompanyResearchStore } = await import("./company-research-storage");
+  expect(openTrackerDatabase).not.toHaveBeenCalled();
+  expect(withCompanyResearchStore(store => store.listRuns("example", "2026-11-01"))).toEqual([]);
+  const connection = trackerGlobal.trackerDatabase!;
+  expect(withTrackerStore(store => store.listCompanies())).toEqual([]);
+  expect(trackerGlobal.trackerDatabase).toBe(connection);
+  expect(openTrackerDatabase).toHaveBeenCalledTimes(1);
+});

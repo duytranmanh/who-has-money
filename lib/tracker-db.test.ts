@@ -27,7 +27,8 @@ function open() {
 // Reconstruct the pre-timestamp schema so upgrade tests start with genuine legacy columns.
 function openLegacy(version: 1 | 2) {
   const db = open();
-  db.exec(`ALTER TABLE companies DROP COLUMN updated_at;
+  db.exec(`DROP TABLE research_runs;
+    ALTER TABLE companies DROP COLUMN updated_at;
     ALTER TABLE companies DROP COLUMN created_at;
     PRAGMA user_version = ${version};`);
   if (version === 1) db.exec("DROP TABLE tracker_metadata");
@@ -36,9 +37,9 @@ function openLegacy(version: 1 | 2) {
 
 it("creates the directory and schema, then preserves records on reopen", () => {
   const db = open();
-  expect(db.prepare("PRAGMA user_version").get()).toMatchObject({ user_version: 3 });
+  expect(db.prepare("PRAGMA user_version").get()).toMatchObject({ user_version: 4 });
   expect(db.prepare("SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name").all().map(row => row.name))
-    .toEqual(["companies", "contacts", "messages", "sequences", "tracker_metadata"]);
+    .toEqual(["companies", "contacts", "messages", "research_runs", "sequences", "tracker_metadata"]);
   db.prepare("INSERT INTO companies (id, name, notes, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
     .run("c", "Sample", "Notes", 0, "2026-11-01T12:00:00.000Z", "2026-11-02T12:00:00.000Z");
   db.close();
@@ -59,12 +60,38 @@ it("rejects orphan contacts, sequences, and messages", () => {
     .toThrow(/FOREIGN KEY/);
 });
 
+it("upgrades version three with research storage without changing existing tracker records", () => {
+  const db = open();
+  db.exec(`DROP TABLE research_runs; PRAGMA user_version = 3;
+    INSERT INTO companies VALUES ('existing', 'Keep', 'Notes', 0, '2026-11-01T00:00:00Z', '2026-11-02T00:00:00Z');`);
+  const before = db.prepare("SELECT * FROM companies").all();
+  db.close();
+  const upgraded = open();
+  expect(upgraded.prepare("PRAGMA user_version").get()).toMatchObject({ user_version: 4 });
+  expect(upgraded.prepare("SELECT * FROM research_runs").all()).toEqual([]);
+  expect(upgraded.prepare("SELECT * FROM companies").all()).toEqual(before);
+});
+
+it("rolls back a partially applied research migration and preserves version three", () => {
+  const db = open();
+  db.exec(`DROP TABLE research_runs; PRAGMA user_version = 3;
+    CREATE INDEX research_runs_round ON companies(name);`);
+  const before = db.prepare("SELECT name, sql FROM sqlite_schema ORDER BY name").all();
+  db.close();
+  expect(() => open()).toThrow(/already exists/);
+  const raw = new DatabaseSync(path);
+  connections.push(raw);
+  expect(raw.prepare("PRAGMA user_version").get()).toMatchObject({ user_version: 3 });
+  expect(raw.prepare("SELECT name, sql FROM sqlite_schema ORDER BY name").all()).toEqual(before);
+  raw.exec("BEGIN IMMEDIATE; ROLLBACK;");
+});
+
 it("upgrades a version one database without changing tracker rows", () => {
   const db = openLegacy(1);
   db.exec("INSERT INTO companies VALUES ('old', 'Existing', 'Keep notes', 0);");
   db.close();
   const upgraded = open();
-  expect(upgraded.prepare("PRAGMA user_version").get()).toMatchObject({ user_version: 3 });
+  expect(upgraded.prepare("PRAGMA user_version").get()).toMatchObject({ user_version: 4 });
   expect(upgraded.prepare("SELECT * FROM tracker_metadata").all()).toEqual([]);
   expect(upgraded.prepare("SELECT * FROM companies").get())
     .toMatchObject({ id: "old", name: "Existing", notes: "Keep notes", position: 0,
@@ -82,7 +109,7 @@ it("upgrades version two data with synthetic timestamps without changing outreac
   const before = tables.map(table => db.prepare(`SELECT * FROM ${table}`).all());
   db.close();
   const reopened = open();
-  expect(reopened.prepare("PRAGMA user_version").get()).toMatchObject({ user_version: 3 });
+  expect(reopened.prepare("PRAGMA user_version").get()).toMatchObject({ user_version: 4 });
   expect(reopened.prepare("SELECT * FROM companies").get())
     .toMatchObject({ id: "old", name: "Existing", notes: "Keep notes", position: 0,
       created_at: expect.any(String), updated_at: expect.any(String) });
@@ -133,13 +160,13 @@ it("rolls back a failed multi-record transaction", () => {
 
 it("leaves newer schemas untouched and releases the migration lock on failure", () => {
   const db = open();
-  db.exec("PRAGMA user_version = 4");
+  db.exec("PRAGMA user_version = 5");
   db.close();
-  expect(() => open()).toThrow("Unsupported tracker database schema version: 4");
+  expect(() => open()).toThrow("Unsupported tracker database schema version: 5");
   const raw = new DatabaseSync(path);
   connections.push(raw);
   raw.exec("BEGIN IMMEDIATE");
-  expect(raw.prepare("PRAGMA user_version").get()).toMatchObject({ user_version: 4 });
+  expect(raw.prepare("PRAGMA user_version").get()).toMatchObject({ user_version: 5 });
   raw.exec("ROLLBACK");
 });
 
@@ -199,7 +226,7 @@ it("rolls back the schema and earlier backfilled rows when a later company updat
   raw.exec("DROP TRIGGER reject_backfill");
   raw.close();
   const retried = open();
-  expect(retried.prepare("PRAGMA user_version").get()).toMatchObject({ user_version: 3 });
+  expect(retried.prepare("PRAGMA user_version").get()).toMatchObject({ user_version: 4 });
   expect(retried.prepare("SELECT created_at, updated_at FROM companies").all())
     .toEqual(Array(2).fill({ created_at: expect.any(String), updated_at: expect.any(String) }));
 });

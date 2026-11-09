@@ -1,3 +1,11 @@
+/**
+ * @fileoverview Stores Applications resources and provides the shared local SQLite connection.
+ * Supplies synchronous transaction mechanics; callers choose business transaction boundaries.
+ *
+ * Uses lib/tracker-db.ts for initialization and schema upgrades.
+ * Shares its connection with lib/company-research-storage.ts.
+ */
+
 import { resolve } from "node:path";
 import { openTrackerDatabase } from "./tracker-db";
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
@@ -275,8 +283,14 @@ const trackerGlobal = globalThis as typeof globalThis & { trackerDatabase?: Data
 
 // Open on first use, then reuse until process exit. Callbacks must finish synchronously.
 export function withTrackerStore<T>(operation: (store: TrackerStore) => T): T {
+  return withTrackerDatabase(db => operation(createTrackerStorage(db)));
+}
+
+// Research and tracker storage share the same lazy connection and migration lifecycle.
+// As with store callbacks, database callbacks must finish synchronously.
+export function withTrackerDatabase<T>(operation: (db: DatabaseSync) => T): T {
   if (!trackerGlobal.trackerDatabase?.isOpen) {
     trackerGlobal.trackerDatabase = openTrackerDatabase(resolve("data/tracker.sqlite"));
   }
-  return operation(createTrackerStorage(trackerGlobal.trackerDatabase));
+  return operation(trackerGlobal.trackerDatabase);
 }

@@ -69,6 +69,14 @@ Research uses Groq `openai/gpt-oss-20b`. A separate final call requests strict J
 
 Sources use IDs such as `page_1`. Input evidence uses `company.FIELD`, such as `company.description`. Each fact contains a claim, source ID, and verbatim quote. These checks establish evidence provenance; they cannot establish that a model's interpretation logically follows from a quote. Review remains necessary.
 
+## Server diagnostics
+
+Research uses the dependency-free `lib/logger.ts` logger. Each event is one JSON line on stderr, visible in the terminal running Next.js. All three levels (`info`, `warn`, `error`) use stderr to preserve the CLI's result-only stdout. Logs are not saved to a separate file automatically.
+
+API claims, engine runs, page attempts, model calls, and saves share the persisted `runId`. Standalone CLI runs generate a correlation ID without creating a database record. Normal GET polling is not logged; request failures include their stage and a run ID or read request ID.
+
+Events include timings, token usage, page/source counts, provider status/code, request ID, retry delay, and attempted tool name when available. Rate-limit errors also expose numeric token limits and usage when present in provider diagnostics. Citation failures identify the fact/source IDs and distinguish `missing_source` from `quote_mismatch`. Provider messages, generated arguments, prompts, profile content, page text, URLs, credentials, and full error objects are excluded from logs. Existing saved run diagnostics and API responses are unchanged; logging adds neither retries nor error-message translation.
+
 ## Limits and failures
 
 - At most four model calls, reserving one for the final assessment; no automatic SDK retries.

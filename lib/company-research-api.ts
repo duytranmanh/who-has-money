@@ -10,9 +10,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createFundingStorage } from "./funding-storage";
-import { parseResearchProfile, researchCompany, RESEARCH_LIMITS, RESEARCH_MODEL, RESEARCH_PROMPT_VERSION,
+import { parseResearchProfile, researchCompany, researchErrorDetails, RESEARCH_LIMITS, RESEARCH_MODEL, RESEARCH_PROMPT_VERSION,
   type ResearchCompany, type ResearchProfile, type ResearchResult } from "./company-research";
 import { withCompanyResearchStore, type ResearchRunSummary, type SavedResearchRun } from "./company-research-storage";
+import { logger, type LogFields } from "./logger";
 
 const headers = { "Cache-Control": "no-store" };
 // Allow result validation/persistence time beyond the engine's 90-second network deadline.
@@ -23,7 +24,13 @@ class ResearchApiError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) { super(message); }
 }
 
-function errorResponse(error: unknown): Response {
+function errorResponse(error: unknown, context: LogFields): Response {
+  const status = error instanceof ResearchApiError ? error.status : 500;
+  const details = researchErrorDetails(error);
+  const fields = { ...context, ...details, status,
+    errorCode: error instanceof ResearchApiError ? error.code : details.errorCode ?? "internal_error" };
+  if (status < 500) logger.warn("research.request_failed", fields);
+  else logger.error("research.request_failed", fields);
   if (error instanceof ResearchApiError) return Response.json({ error: { code: error.code, message: error.message } }, { status: error.status, headers });
   return Response.json({ error: { code: "internal_error", message: "Could not load or save company research." } }, { status: 500, headers });
 }
@@ -108,13 +115,15 @@ export async function companyResearchRead(request: Request, slug: string): Promi
         history: history.map(run => ({ ...run, ...freshness(run, companyHash, profileHash) })),
       }, { headers });
     }));
-  } catch (error) { return errorResponse(error); }
+  } catch (error) { return errorResponse(error, { companySlug: slug, stage: "read", requestId: randomUUID() }); }
 }
 
 export async function companyResearchStart(request: Request, slug: string): Promise<Response> {
   // 1. Resolve trusted local inputs and commit an exclusive, expiring round claim.
   // 2. Run bounded research outside any database callback or transaction.
   // 3. Commit the result only if the claim remains active, then report the saved state.
+  const id = randomUUID();
+  let stage = "input";
   try {
     let input: unknown;
     try { input = await request.json(); } catch { throw new ResearchApiError(400, "invalid_input", "Body must be valid JSON."); }
@@ -128,9 +137,9 @@ export async function companyResearchStart(request: Request, slug: string): Prom
     if (!process.env.GROQ_API_KEY?.trim()) throw new ResearchApiError(503, "model_unavailable", "Configure GROQ_API_KEY before starting research.");
     request.signal.throwIfAborted();
     const now = new Date();
-    const id = randomUUID();
     const companyHash = researchInputHash(company);
     const profileHash = researchInputHash(profile);
+    stage = "claim";
     const claim = withCompanyResearchStore(store => store.transaction(() => {
       store.expireRuns(slug, date, now.toISOString());
       const active = store.listRuns(slug, date).find(run => run.status === "running");
@@ -140,15 +149,22 @@ export async function companyResearchStart(request: Request, slug: string): Prom
         startedAt: now.toISOString(), deadlineAt: new Date(now.getTime() + RESEARCH_CLAIM_MS).toISOString() });
       return { activeId: null };
     }));
-    if (claim.activeId) return Response.json({ error: { code: "conflict", message: "Research is already running for this round." }, runId: claim.activeId }, { status: 409, headers });
+    if (claim.activeId) {
+      logger.warn("research.claim_conflict", { runId: claim.activeId, companySlug: slug, announcedDate: date });
+      return Response.json({ error: { code: "conflict", message: "Research is already running for this round." }, runId: claim.activeId }, { status: 409, headers });
+    }
+    logger.info("research.claimed", { runId: id, companySlug: slug, announcedDate: date });
 
     let result: ResearchResult;
-    try { result = await researchCompany(company, profile, { signal: request.signal }); }
-    catch {
+    stage = "engine";
+    try { result = await researchCompany(company, profile, { signal: request.signal, runId: id }); }
+    catch (error) {
+      logger.error("research.engine_failed", { runId: id, companySlug: slug, ...researchErrorDetails(error) });
       result = { company_slug: slug, model: RESEARCH_MODEL, prompt_version: RESEARCH_PROMPT_VERSION,
         started_at: now.toISOString(), finished_at: new Date().toISOString(), status: "failed",
         error: "Research stopped unexpectedly before producing a result.", sources: [], tools: [], calls: [] };
     }
+    stage = "save";
     const saved = withCompanyResearchStore(store => store.transaction(() => {
       const finishedAt = new Date().toISOString();
       store.expireRuns(slug, date, finishedAt);
@@ -156,6 +172,7 @@ export async function companyResearchStart(request: Request, slug: string): Prom
       return store.getRun(id)!;
     }));
     if (!saved) throw new ResearchApiError(409, "conflict", "Research claim expired or was already closed. Reload saved research before retrying.");
+    logger.info("research.saved", { runId: id, companySlug: slug, status: saved.status });
     return Response.json({ run: runView(saved, companyHash, profileHash) }, { status: saved.status === "completed" ? 201 : 502, headers });
-  } catch (error) { return errorResponse(error); }
+  } catch (error) { return errorResponse(error, { runId: id, companySlug: slug, stage }); }
 }

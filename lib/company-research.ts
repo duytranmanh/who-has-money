@@ -3,13 +3,16 @@
  * Returns evidence and diagnostics; callers handle persistence.
  *
  * Uses lib/research-page.ts for bounded webpage evidence.
+ * Uses lib/logger.ts for correlated server diagnostics without logging research content.
  * Called by scripts/research-company.ts for fixture-based CLI runs.
  * Called by lib/company-research-api.ts for persisted Discovery research.
  * See docs/company-research-engine.md for limits and usage.
  */
 
 import Groq from "groq-sdk";
+import { randomUUID } from "node:crypto";
 import type { ChatCompletion, ChatCompletionCreateParamsNonStreaming, ChatCompletionMessageParam } from "groq-sdk/resources/chat/completions";
+import { logger, type LogFields } from "./logger.ts";
 import { pageUrl, readResearchPage, type ResearchPage } from "./research-page.ts";
 
 export type ResearchCompany = { slug: string; name: string; website?: unknown; [key: string]: unknown };
@@ -41,10 +44,70 @@ export type ResearchResult = Run & (
   { status: "completed"; assessment: CompanyAssessment } | { status: "failed"; error: string }
 );
 type Options = {
+  runId?: string;
   signal?: AbortSignal;
   complete?: (params: ChatCompletionCreateParamsNonStreaming, options: { signal: AbortSignal }) => Promise<ChatCompletion>;
   readPage?: (url: string, signal: AbortSignal) => Promise<ResearchPage>;
 };
+
+class AssessmentValidationError extends Error {
+  readonly code: string;
+  readonly details: LogFields;
+  constructor(code: string, message: string, details: LogFields = {}) {
+    super(message);
+    this.code = code;
+    this.details = details;
+  }
+}
+
+// Select diagnostics instead of logging provider messages, which may contain prompts or generated content.
+export function researchErrorDetails(error: unknown): LogFields {
+  // 1. Select bounded identifiers and provider status from the error's structured fields.
+  // 2. Extract retry guidance and an attempted tool name without retaining response bodies or arguments.
+  const identifier = (value: unknown) => typeof value === "string" && /^[\w.:-]{1,100}$/.test(value) ? value : undefined;
+  if (!error || typeof error !== "object") return { errorName: "UnknownError" };
+  const row = error as Record<string, unknown>;
+  const body = row.error && typeof row.error === "object" ? row.error as Record<string, unknown> : {};
+  const provider = body.error && typeof body.error === "object" ? body.error as Record<string, unknown> : body;
+  const fields: LogFields = {
+    errorName: identifier(row.name) ?? "Error", errorCode: identifier(provider.code) ?? identifier(row.code),
+    providerErrorType: identifier(provider.type), status: typeof row.status === "number" ? row.status : undefined,
+  };
+  if (error instanceof SyntaxError) fields.errorCode ??= "invalid_json";
+  const localCodes: Record<string, string> = {
+    "URL was not discovered in company pages.": "undiscovered_url",
+    "Page was already attempted.": "duplicate_page",
+    "Page-read limit reached.": "page_limit",
+    "Page URL must use a public HTTP or HTTPS endpoint on its default port.": "invalid_page_url",
+    "Page hostname resolves to a non-public address.": "private_page_address",
+    "Page exceeds response byte limit.": "page_too_large",
+    "Page response interrupted.": "page_interrupted",
+    "Page exceeds redirect limit.": "redirect_limit",
+    "Model response did not finish successfully.": "incomplete_completion",
+    "Model returned no message.": "missing_message",
+    "Model returned no final assessment.": "missing_assessment",
+    "Unknown research tool.": "unknown_tool",
+    "read_page requires only a nonempty URL string.": "invalid_tool_arguments",
+  };
+  if (!fields.errorCode && typeof row.message === "string") fields.errorCode = localCodes[row.message];
+  const httpStatus = typeof row.message === "string" ? /^Page request failed: HTTP (\d{3}); expected uncompressed HTML\.$/.exec(row.message) : null;
+  if (httpStatus) { fields.errorCode = "page_http_error"; fields.status = Number(httpStatus[1]); }
+  if (error instanceof AssessmentValidationError) Object.assign(fields, error.details);
+  const tokens = typeof provider.message === "string" ? /Limit (\d+), Used (\d+), Requested (\d+)/.exec(provider.message) : null;
+  if (tokens) Object.assign(fields, { tokenLimit: Number(tokens[1]), tokensUsed: Number(tokens[2]), tokensRequested: Number(tokens[3]) });
+  if (row.headers instanceof Headers) {
+    fields.providerRequestId = identifier(row.headers.get("x-request-id"));
+    const retry = row.headers.get("retry-after");
+    if (retry) {
+      const seconds = Number.isFinite(Number(retry)) ? Number(retry) : (Date.parse(retry) - Date.now()) / 1000;
+      if (Number.isFinite(seconds)) fields.retryAfterSeconds = Math.max(0, Math.ceil(seconds));
+    }
+  }
+  if (typeof provider.failed_generation === "string") {
+    try { fields.attemptedTool = identifier(JSON.parse(provider.failed_generation)?.name); } catch { /* Failed generations need not be valid JSON. */ }
+  }
+  return fields;
+}
 
 type Schema = { type: "object" | "array" | "string"; properties?: Record<string, Schema>; items?: Schema; enum?: string[]; required?: string[]; additionalProperties?: false };
 const text: Schema = { type: "string" };
@@ -94,9 +157,9 @@ export function validateAssessment(value: unknown, company: ResearchCompany, sou
   // 1. Enforce the complete response shape and company identity.
   // 2. Verify each fact references retrieved text or an actual company field.
   // 3. Verify reason references and require evidence for positive or negative conclusions.
-  if (!matches(value, assessmentSchema)) throw new Error("Assessment does not match the required schema.");
+  if (!matches(value, assessmentSchema)) throw new AssessmentValidationError("invalid_schema", "Assessment does not match the required schema.");
   const assessment = value as CompanyAssessment;
-  if (assessment.company_slug !== company.slug) throw new Error("Assessment company does not match the input.");
+  if (assessment.company_slug !== company.slug) throw new AssessmentValidationError("company_mismatch", "Assessment company does not match the input.");
   const evidence = new Map(sources.map(source => [source.id, source.page.text]));
   for (const [key, field] of Object.entries(company)) {
     if (field !== null && field !== undefined) evidence.set(`company.${key}`, typeof field === "string" ? field : JSON.stringify(field));
@@ -104,25 +167,30 @@ export function validateAssessment(value: unknown, company: ResearchCompany, sou
   const facts = new Set<string>();
   const normalize = (text: string) => text.replace(/\s+/g, " ").trim();
   for (const fact of assessment.supporting_facts) {
-    if (facts.has(fact.id)) throw new Error("Assessment contains duplicate fact IDs.");
+    if (facts.has(fact.id)) throw new AssessmentValidationError("duplicate_fact", "Assessment contains duplicate fact IDs.");
     const source = evidence.get(fact.source_id);
-    if (!source || !normalize(source).includes(normalize(fact.quote))) throw new Error("Assessment cites missing evidence or an unmatched quote.");
+    if (!source || !normalize(source).includes(normalize(fact.quote))) {
+      // IDs identify the failed reference; excerpts and company/profile content stay out of logs.
+      const reference = (id: string) => /^[\w.:-]{1,100}$/.test(id) ? id : "invalid_identifier";
+      throw new AssessmentValidationError(source ? "quote_mismatch" : "missing_source",
+        "Assessment cites missing evidence or an unmatched quote.", { factId: reference(fact.id), sourceId: reference(fact.source_id) });
+    }
     facts.add(fact.id);
   }
   const reasons = [...assessment.reasons_connected_to_profile, ...assessment.mismatches];
   for (const item of [...reasons, assessment.hiring, assessment.role_suitability]) {
-    if (item.fact_ids.some(id => !facts.has(id))) throw new Error("Assessment references an unknown fact.");
+    if (item.fact_ids.some(id => !facts.has(id))) throw new AssessmentValidationError("unknown_fact", "Assessment references an unknown fact.");
   }
   if (reasons.some(item => !item.fact_ids.length) ||
       (assessment.hiring.status !== "unknown" && !assessment.hiring.fact_ids.length) ||
       (assessment.role_suitability.status !== "unknown" && !assessment.role_suitability.fact_ids.length) ||
       (["strong_fit", "possible_fit"].includes(assessment.fit_judgment) && !assessment.reasons_connected_to_profile.length) ||
       (assessment.fit_judgment === "reject" && !assessment.mismatches.length)) {
-    throw new Error("Assessment conclusion lacks evidence references.");
+    throw new AssessmentValidationError("missing_references", "Assessment conclusion lacks evidence references.");
   }
   if (assessment.recommended_next_step.action === "apply" &&
       (assessment.hiring.status !== "verified_openings" || assessment.role_suitability.status !== "possible_match")) {
-    throw new Error("Applying requires a verified opening and a possible role match.");
+    throw new AssessmentValidationError("unverified_opening", "Applying requires a verified opening and a possible role match.");
   }
   return assessment;
 }
@@ -151,6 +219,10 @@ export async function researchCompany(company: ResearchCompany, inputProfile: un
     company_slug: company.slug, model: RESEARCH_MODEL, prompt_version: RESEARCH_PROMPT_VERSION,
     started_at: new Date().toISOString(), finished_at: "", sources: [], tools: [], calls: [],
   };
+  const context = { runId: options.runId ?? randomUUID(), companySlug: company.slug, model: RESEARCH_MODEL };
+  const started = Date.now();
+  let stage = "setup";
+  logger.info("research.started", { ...context, promptVersion: RESEARCH_PROMPT_VERSION });
   const signal = AbortSignal.any([AbortSignal.timeout(RESEARCH_LIMITS.timeoutMs), ...(options.signal ? [options.signal] : [])]);
   const readPage = options.readPage ?? readResearchPage;
   const allowed = new Set<string>();
@@ -163,6 +235,8 @@ export async function researchCompany(company: ResearchCompany, inputProfile: un
   // Page failures become model-visible evidence gaps rather than aborting the session.
   async function read(url: string) {
     const started = Date.now();
+    const pageAttempt = run.tools.length + 1;
+    logger.info("research.page_started", { ...context, pageAttempt });
     try {
       signal.throwIfAborted();
       if (run.tools.length >= RESEARCH_LIMITS.pageReads) throw new Error("Page-read limit reached.");
@@ -175,11 +249,14 @@ export async function researchCompany(company: ResearchCompany, inputProfile: un
       run.sources.push(source);
       for (const link of page.links) allowed.add(pageUrl(link.url).href);
       run.tools.push({ url: target, source_id: source.id, duration_ms: Date.now() - started });
+      logger.info("research.page_completed", { ...context, pageAttempt, sourceId: source.id,
+        durationMs: Date.now() - started, textChars: page.text.length, truncated: page.truncated });
       return source;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Page read failed.";
       // Count rejected attempts too, so repeated invalid tool requests cannot bypass the budget.
       run.tools.push({ url, error: message, duration_ms: Date.now() - started });
+      logger.warn("research.page_failed", { ...context, pageAttempt, durationMs: Date.now() - started, ...researchErrorDetails(error) });
       return { error: message };
     }
   }
@@ -189,11 +266,14 @@ export async function researchCompany(company: ResearchCompany, inputProfile: un
     const client = options.complete ? undefined : new Groq({ maxRetries: 0 });
     const complete = options.complete ?? ((params, requestOptions) => client!.chat.completions.create(params, requestOptions));
     // Disable SDK retries at client creation; every provider attempt belongs to the shared budget.
-    async function call(stage: ModelTrace["stage"], extra: Partial<ChatCompletionCreateParamsNonStreaming>) {
+    async function call(callStage: ModelTrace["stage"], extra: Partial<ChatCompletionCreateParamsNonStreaming>) {
+      stage = callStage;
       signal.throwIfAborted();
       const started = Date.now();
-      const trace: ModelTrace = { stage, duration_ms: 0, prompt_tokens: null, completion_tokens: null };
+      const trace: ModelTrace = { stage: callStage, duration_ms: 0, prompt_tokens: null, completion_tokens: null };
       run.calls.push(trace);
+      const callContext = { ...context, stage: callStage, callNumber: run.calls.length };
+      logger.info("research.model_started", { ...callContext, messageCount: messages.length, maxCompletionTokens: RESEARCH_LIMITS.completionTokens });
       try {
         const response = await complete({ model: RESEARCH_MODEL, messages, max_completion_tokens: RESEARCH_LIMITS.completionTokens, ...extra }, { signal });
         trace.prompt_tokens = response.usage?.prompt_tokens ?? null;
@@ -204,10 +284,14 @@ export async function researchCompany(company: ResearchCompany, inputProfile: un
         }
         const message = response.choices[0]?.message;
         if (!message) throw new Error("Model returned no message.");
+        logger.info("research.model_completed", { ...callContext, durationMs: Date.now() - started,
+          promptTokens: trace.prompt_tokens, completionTokens: trace.completion_tokens, finishReason: response.choices[0].finish_reason });
         return message;
       } catch (error) {
         const message = error instanceof Error ? error.message : "Model call failed.";
         trace.error = message;
+        logger.error("research.model_failed", { ...callContext, durationMs: Date.now() - started,
+          promptTokens: trace.prompt_tokens, completionTokens: trace.completion_tokens, ...researchErrorDetails(error) });
         throw error;
       } finally { trace.duration_ms = Date.now() - started; }
     }
@@ -232,7 +316,10 @@ export async function researchCompany(company: ResearchCompany, inputProfile: un
           const args: unknown = JSON.parse(tool.function.arguments);
           if (!matches(args, object({ url: text }))) throw new Error("read_page requires only a nonempty URL string.");
           result = await read((args as { url: string }).url);
-        } catch (error) { result = { error: error instanceof Error ? error.message : "Invalid tool call." }; }
+        } catch (error) {
+          logger.warn("research.tool_rejected", { ...context, stage, ...researchErrorDetails(error) });
+          result = { error: error instanceof Error ? error.message : "Invalid tool call." };
+        }
         messages.push({ role: "tool", tool_call_id: tool.id, content: JSON.stringify(result) });
       }
     }
@@ -241,9 +328,14 @@ export async function researchCompany(company: ResearchCompany, inputProfile: un
       type: "json_schema", json_schema: { name: "company_assessment", strict: true, schema: assessmentSchema },
     } });
     if (!message.content || message.tool_calls?.length) throw new Error("Model returned no final assessment.");
+    stage = "validation";
     const assessment = validateAssessment(JSON.parse(message.content), company, run.sources);
+    logger.info("research.completed", { ...context, durationMs: Date.now() - started,
+      modelCalls: run.calls.length, pageAttempts: run.tools.length, sourceCount: run.sources.length });
     return { ...run, finished_at: new Date().toISOString(), status: "completed", assessment };
   } catch (error) {
+    logger.error("research.failed", { ...context, stage, durationMs: Date.now() - started,
+      modelCalls: run.calls.length, pageAttempts: run.tools.length, ...researchErrorDetails(error) });
     return { ...run, finished_at: new Date().toISOString(), status: "failed", error: error instanceof Error ? error.message : "Research failed." };
   }
 }

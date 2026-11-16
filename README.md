@@ -20,8 +20,7 @@ No local Node.js or npm installation needed. On Windows, use WSL with Docker Des
    cd who-has-money
    ```
 
-2. Create `.env.local` (required, even without API keys):
-
+2. Create `.env.local`
    ```sh
    cp .env.example .env.local
    ```
@@ -60,7 +59,7 @@ Run from the project directory:
 | `make logs` | Follow logs; Ctrl+C exits |
 | `make down` | Stop the app; keep saved data |
 
-If startup fails, confirm Docker is running, `.env.local` exists, and port 3000 is free. Check `make logs` for details.
+If startup fails, confirm Docker is running and port 3000 is free. Check `make logs` for details.
 
 Data stays in `data/`. To back up, stop the app and copy that directory.
 

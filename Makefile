@@ -13,7 +13,11 @@ help:
 	  '  logs     Follow container logs (Ctrl+C to exit)' \
 	  '  status   Show container status'
 
-up:
+# Compose requires this file; leave existing keys untouched.
+.env.local:
+	@touch .env.local
+
+up: .env.local
 	docker compose up -d --build --force-recreate
 
 restart:

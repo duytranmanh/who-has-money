@@ -6,8 +6,9 @@ and mounts host `./data` at `/app/data` to preserve SQLite records and funding
 snapshots. Secrets and saved data are excluded from the image. Funding reads
 run at request time so they see mounted snapshots.
 
-Run these from the project directory with Docker running. Create `.env.local`
-with `RECENT_FUNDING_API_KEY=your_key_here` for funding refresh.
+Run these from the project directory with Docker running. `make up` creates an
+empty `.env.local` if missing and preserves existing values. For funding refresh,
+set `RECENT_FUNDING_API_KEY` to your real key in that file, then run `make restart`.
 
 | Command | Purpose |
 | --- | --- |
